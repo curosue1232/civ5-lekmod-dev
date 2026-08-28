@@ -3,51 +3,39 @@
 ## Known-good baseline
 
 - LEK Core v1.3: working and frozen.
-- Stable development baseline v1.1: passed on the target machine. Workspace layout cleaned in v1.2; Git first-run connector hardened in v1.2.1; core behavior unchanged.
-- Old Fair AI Trades experimental remnants: cleaned before the new extension baseline.
-- Fair Trades clean runtime is under active validation; current test target is v1.0.4.
-- RAS v0.8.9 targeted wonder-graphics hotfix is isolated from the frozen core and is available through Dev Tool options 9-11.
+- Development workspace and `T` one-click cycle are the canonical deployment/test path.
+- Old Fair AI Trades experimental remnants were cleaned before the new extension baseline.
+- Fair Trades current test target: **v1.1.0 SIMPLE NATIVE**.
+- RAS v0.8.9 targeted wonder-graphics hotfix remains isolated from the frozen core.
 
-## Fair Trades architecture
+## Fair Trades current direction
 
-- Dedicated `LEKFairTrades.lua` runtime.
-- Dedicated `LEKFairTrades.xml` context.
-- One stable marked loader in LEKMOD `InGame.lua`.
-- No EUI `LeaderHeadRoot.lua` patch in v1.0.x.
-- No executable `ContextPtr:SetUpdate` in v1.0.4.
-- `SerialEventGameDataDirty` is not a deal scanner: v1.0.4 subscribes only transiently after a busy `ActivePlayerTurnStart`, performs no deal work while the queue is busy, and removes the callback immediately when the queue clears or the turn ends.
-- Native Civ V deal helpers replace the old broad Gold/GPT search loops.
-- Hard native-helper work budget: maximum 8 helper calls per local human turn.
+The earlier native-value candidate engine proved that the turn-ready retry and direct native trade-offer UI handoff work, but recreating Civ V pricing in Lua added unnecessary complexity and debugging cost.
 
-## Fair Trades diagnostic history
+v1.1.0 deliberately simplifies the engine:
 
-- v1.0/v1.0.1 loaded successfully but stopped at `TURN_START_MESSAGE_QUEUE_BUSY` and never evaluated AIs.
-- v1.0.2 added a bounded `SetUpdate` queue retry. Diagnostic proved it reached `TURN_START_MESSAGE_QUEUE_BUSY_RETRY_ARMED`, but the retry never ticked.
-- v1.0.3 made the empty context active, but the next diagnostic again ended at `TURN_START_MESSAGE_QUEUE_BUSY_RETRY_ARMED` with no retry heartbeat, eligible-AI count, luxury count, or helper calls. The child context still did not receive update ticks on the target MP setup.
-- v1.0.4 removes `SetUpdate` entirely and uses a transient event-driven turn-ready signal. The actual runtime is now canonical source in GitHub; the obsolete install-time runtime patcher was removed.
+- Pick an eligible AI based on the existing relationship schedule.
+- Seed a useful luxury trade.
+- Use Civ V native trade helpers (`UI.DoWhatWillAIGive`, `UI.DoWhatDoesAIWant`, with `UI.DoEqualizeDealWithHuman` as fallback) to build the price.
+- Apply only a small final safety filter: luxury resources + Gold/GPT only, no third-party/unsupported items, both sides must give something, and the human never gives away the last copy of a luxury.
+- Maximum four native build attempts per local human turn.
+- No custom `GetDealMyValue` / `GetDealTheyreValue` pricing loops.
+- Preserve the proven turn-start busy-queue retry and direct `DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER` handoff.
+- Preserve the message-scoped EUI luxury-offer bridge.
 
-## RAS natural-wonder graphics diagnosis
+## Deployment workflow
 
-The RAS option that adds bonus natural wonders can produce valid natural-wonder plot/gameplay data while the tile still renders ordinary terrain.
+GitHub `main` is the source of truth. On the test machine, launch `LEK_DEV_TOOL.bat` and press **T**. The cycle performs:
 
-Latest capture confirms the failing case is a reroll replacement:
+1. `git pull --ff-only`
+2. Frozen Core v1.3 verification
+3. Fair Trades install/update
+4. Fair Trades verification
+5. RAS wonder hotfix install/update
+6. RAS wonder hotfix verification
 
-- RAS bonus-wonder SlotData is present for the human player.
-- v0.8.7.2 replacement loading bypass is active during LoadScreen.
-- v0.8.8 reports `RUNTIME_RAS_REPLAY_OK` later, after the safe post-load boundary.
-- The old v0.8.4 early wonder-graphics phase is absent from the installed InGame files.
-
-This matches the documented v0.8.8 graphics trade-off: feature/gameplay state can be correct while natural-wonder 3D world art is stale because placement happens after world graphics construction.
-
-## RAS v0.8.9 targeted hotfix
-
-- Fresh/manual launches restore the proven early full RAS map phase.
-- Reroll/rehost replacements keep the crash-sensitive full RAS replay at the v0.8.8 safe late boundary.
-- On rerolls, only `DisableOtherWonders()` + `PlaceWonders()` run during the early graphics-critical phase.
-- Seed guards wrap the later calls so the v0.8.8 full replay does not duplicate/remove the already placed wonders.
-- Diagnostics record `WonderGraphicsHeartbeat`, `WonderGraphicsMode`, and seed state.
-- This is a placement-timing fix; an already loaded map cannot be expected to retroactively rebuild missing natural-wonder world art. Validate with a new game/reroll after installation.
+If runtime behavior fails, use Dev Tool option 7 once and upload the diagnostic ZIP.
 
 ## Development rule
 
-Future changes should be committed as small component-scoped edits. The frozen core stays untouched unless the issue genuinely belongs to a core component.
+Prefer the simplest implementation that produces the desired in-game behavior. Keep component-scoped edits small. The frozen core stays untouched unless the issue genuinely belongs to a core component.

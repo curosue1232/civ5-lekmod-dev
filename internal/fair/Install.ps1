@@ -6,7 +6,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.8 EUI BRIDGE INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.0.10 CANDIDATE ENGINE INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -70,8 +70,8 @@ try {
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.0.8 EUI BRIDGE INSTALLED.' Green
-    W 'Validated Fair Trades luxury offers bypass EUI suppression; ordinary AI luxury chatter remains suppressed.' Green
+    W 'FAIR TRADES v1.0.10 CANDIDATE ENGINE INSTALLED.' Green
+    W 'Multi-pair luxury search and lazy native pricing are active; the proven EUI bridge is unchanged.' Green
     exit 0
 } catch {
     W ''

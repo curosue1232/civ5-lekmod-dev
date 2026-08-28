@@ -6,7 +6,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.4 DIRECT NATIVE VALUE INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.1.5 EUI DIRECT OFFER BRIDGE INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -23,12 +23,14 @@ try {
     $inGame=Join-LEKPath $lekUI 'InGame.lua'
     $leader=Get-LEKLeaderRoot $civ
     $tradeLogic=Join-LEKPath $civ 'Assets\DLC\UI_bc1\LeaderHead\TradeLogic.lua'
+    $diploTrade=Join-LEKPath $civ 'Assets\DLC\UI_bc1\bugfixes\diplotrade.lua'
     if(!(Test-LEKPath $inGame)){ throw 'Lekmod InGame.lua not found.' }
     if(!(Test-LEKPath $leader)){ throw 'EUI LeaderHeadRoot.lua not found.' }
     if(!(Test-LEKPath $tradeLogic)){ throw 'EUI TradeLogic.lua not found at Assets\DLC\UI_bc1\LeaderHead\TradeLogic.lua.' }
+    if(!(Test-LEKPath $diploTrade)){ throw 'EUI diplotrade.lua not found at Assets\DLC\UI_bc1\bugfixes\diplotrade.lua.' }
 
     $old=@()
-    foreach($p in @($inGame,$leader,$tradeLogic)){
+    foreach($p in @($inGame,$leader,$tradeLogic,$diploTrade)){
         $txt=[IO.File]::ReadAllText($p)
         if($txt -match 'LEK_MP_FAIR_AI_TRADES_'){ $old += ('old marker in '+$p) }
     }
@@ -43,13 +45,28 @@ try {
     $backupRoot=Join-Path $Root 'local\backups\fair'
     [void](Backup-LEKFileOnce $inGame $backupRoot 'InGame.lua')
     [void](Backup-LEKFileOnce $tradeLogic $backupRoot 'TradeLogic.lua')
+    [void](Backup-LEKFileOnce $diploTrade $backupRoot 'diplotrade.lua')
 
     Set-LEKMarkedBlock $inGame '-- LEK_EXT_FAIR_TRADES_LOADER_BEGIN' '-- LEK_EXT_FAIR_TRADES_LOADER_END' 'ContextPtr:LoadNewContext("LEKFairTrades")'
 
-    # EUI compatibility is best-effort. Some EUI builds contain an explicit
-    # AIOfferingLux suppression branch and some do not. Patch the known simple
-    # forms when present, but never abort the whole Fair Trades install merely
-    # because TradeLogic.lua has a different layout.
+    # EUI's bugfixes/diplotrade.lua includes TradeLogic and owns the live
+    # LeaderMessageHandler registration. Expose one private LuaEvents bridge so
+    # Fair Trades can enter AI-offer mode directly in that exact context.
+    $offerBridgeBody=@'
+MapModData = MapModData or {}
+MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_READY = true
+LuaEvents.LEKFairTradesAIOffer.Add(function(iPlayer, szMessage)
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_CALLED_AI = iPlayer
+    LeaderMessageHandler(iPlayer, DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER, szMessage, -1, 0)
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_AI = iPlayer
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_STATE = DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER
+end)
+'@
+    Set-LEKMarkedBlock $diploTrade '-- LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_BEGIN' '-- LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_END' $offerBridgeBody
+    W 'Installed direct EUI AI-offer bridge in bugfixes\diplotrade.lua.' Green
+
+    # Older EUI variants can contain an explicit luxury-offer suppression
+    # branch. Keep the existing best-effort message-scoped compatibility patch.
     $bridgeBegin='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN'
     $bridgeEnd='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_END'
     $fairMessage='I have a trade proposal that I believe is fair to both of us.'
@@ -73,10 +90,9 @@ try {
             $bridgeChanged=$true
             W 'Patched compatible EUI AIOfferingLux suppression branch.' Green
         } elseif($tl -notmatch 'AIOfferingLux\(\)') {
-            W 'This EUI TradeLogic has no AIOfferingLux suppression branch; no EUI patch is needed.' DarkGray
+            W 'This EUI TradeLogic has no AIOfferingLux suppression branch; no luxury patch is needed.' DarkGray
         } else {
-            W 'EUI uses an unfamiliar AIOfferingLux layout. Leaving TradeLogic untouched and continuing.' Yellow
-            W 'If AI-offered luxuries are later hidden, the diagnostic capture will show us exactly what needs adapting.' DarkGray
+            W 'EUI uses an unfamiliar AIOfferingLux layout. Leaving that optional branch untouched.' Yellow
         }
     }
 
@@ -89,10 +105,10 @@ try {
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.1.4 DIRECT NATIVE VALUE INSTALLED.' Green
-    if($bridgeChanged){ W 'EUI luxury-offer compatibility bridge was installed.' Green }
-    W 'One AI session is opened at most; no native what-will-you-give/want/equalize helpers are called.' Green
-    W 'Only exact luxury, flat Gold, or GPT candidates are built and both players must pass native value checks.' Green
+    W 'FAIR TRADES v1.1.5 EUI DIRECT OFFER BRIDGE INSTALLED.' Green
+    if($bridgeChanged){ W 'Optional EUI luxury-offer compatibility bridge was also installed.' Green }
+    W 'Candidate search/value is pre-session; visible offers enter TradeLogic through its own LeaderMessageHandler.' Green
+    W 'UI.OnHumanOpenedTradeScreen and spoofed Events.AILeaderMessage are not used by the runtime.' Green
     exit 0
 } catch {
     W ''

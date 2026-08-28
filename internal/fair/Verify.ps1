@@ -53,8 +53,14 @@ try {
         Check 'no executable SetUpdate' (-not [regex]::IsMatch($t, '(?m)^[ \t]*ContextPtr:SetUpdate[ \t]*\('))
         Check 'no executable DoWhatWillAIGive' (-not [regex]::IsMatch($t, '(?m)^[ \t]*UI\.DoWhatWillAIGive[ \t]*\('))
         Check 'no executable DoWhatDoesAIWant' (-not [regex]::IsMatch($t, '(?m)^[ \t]*UI\.DoWhatDoesAIWant[ \t]*\('))
-        Check 'exactly one transient dirty add' ([regex]::Matches($t,'(?m)^[ \t]*Events\.SerialEventGameDataDirty\.Add[ \t]*\(').Count -eq 1)
-        Check 'exactly one transient dirty remove' ([regex]::Matches($t,'(?m)^[ \t]*Events\.SerialEventGameDataDirty\.Remove[ \t]*\(').Count -eq 1)
+
+        # Count executable registrations/removals even when the call is guarded
+        # later on the line (e.g. "if retryRegistered then Events....Remove").
+        # Comments are excluded so documentation cannot affect verification.
+        $dirtyAddCount=[regex]::Matches($t,'(?m)^[ \t]*(?!--)[^\r\n]*\bEvents\.SerialEventGameDataDirty\.Add[ \t]*\(').Count
+        $dirtyRemoveCount=[regex]::Matches($t,'(?m)^[ \t]*(?!--)[^\r\n]*\bEvents\.SerialEventGameDataDirty\.Remove[ \t]*\(').Count
+        Check 'exactly one transient dirty add' ($dirtyAddCount -eq 1)
+        Check 'exactly one transient dirty remove' ($dirtyRemoveCount -eq 1)
         Check 'no old GetTotalValue loop' (-not $t.Contains('GetTotalValueToMeNormal'))
 
         $spare=[regex]::Match($t,'(?s)local function SpareLux\(.*?local function Prep').Value

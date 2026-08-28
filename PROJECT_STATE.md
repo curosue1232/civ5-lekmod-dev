@@ -3,9 +3,9 @@
 ## Known-good baseline
 
 - LEK Core v1.3: working and frozen.
-- Stable development baseline v1.1: passed on the target machine. Workspace layout cleaned in v1.2; Git first-run connector hardened in v1.2.1; core/runtime behavior unchanged.
+- Stable development baseline v1.1: passed on the target machine. Workspace layout cleaned in v1.2; Git first-run connector hardened in v1.2.1; core behavior unchanged.
 - Old Fair AI Trades experimental remnants: cleaned before the new extension baseline.
-- Fair Trades clean runtime: v1.0.1 installed/verifiable architecture.
+- Fair Trades clean runtime is under active validation; current test target is v1.0.3.
 
 ## Fair Trades architecture
 
@@ -13,10 +13,17 @@
 - Dedicated `LEKFairTrades.xml` context.
 - One stable marked loader in LEKMOD `InGame.lua`.
 - No EUI `LeaderHeadRoot.lua` patch in v1.0.x.
-- No executable `ContextPtr:SetUpdate` scanner.
 - No `GameDataDirty` scanner.
 - Native Civ V deal helpers replace the old broad Gold/GPT search loops.
 - Hard native-helper work budget.
+- A single bounded `ContextPtr:SetUpdate` is allowed only while the MP turn-start message queue is busy; it self-removes on queue clear or a hard 10-second timeout.
+
+## Fair Trades diagnostic history
+
+- v1.0/v1.0.1 loaded successfully but stopped at `TURN_START_MESSAGE_QUEUE_BUSY` and never evaluated AIs.
+- v1.0.2 added a bounded queue retry. Diagnostic proved it reached `TURN_START_MESSAGE_QUEUE_BUSY_RETRY_ARMED`, but the retry never ticked.
+- Root cause for v1.0.2: `LEKFairTrades` was hidden both in Lua and XML. On the target MP setup, the hidden context did not receive update ticks.
+- v1.0.3 makes the context active but empty (no visual controls), keeps the bounded retry, and records `OfferRetryHeartbeat` so the next capture proves whether the update handler ticks and the queue clears.
 
 ## RAS issue being investigated
 

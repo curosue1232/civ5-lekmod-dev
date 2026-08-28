@@ -6,7 +6,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.3 - CLEAN EXTENSION INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.0.4 - CLEAN EXTENSION INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -27,8 +27,8 @@ try {
 
     $old=@()
     foreach($p in @($inGame,$leader)){
-        $t=[IO.File]::ReadAllText($p)
-        if($t -match 'LEK_MP_FAIR_AI_TRADES_'){ $old += ('old marker in '+$p) }
+        $txt=[IO.File]::ReadAllText($p)
+        if($txt -match 'LEK_MP_FAIR_AI_TRADES_'){ $old += ('old marker in '+$p) }
     }
     foreach($f in @(Get-ChildItem -LiteralPath $lekUI -File -ErrorAction SilentlyContinue)){
         if($f.Name -match '^LEKMPFairTrades.*\.(lua|xml)$'){ $old += ('old runtime '+$f.FullName) }
@@ -45,17 +45,8 @@ try {
     $end='-- LEK_EXT_FAIR_TRADES_LOADER_END'
     Set-LEKMarkedBlock $inGame $begin $end 'ContextPtr:LoadNewContext("LEKFairTrades")'
 
-    $installedLua=Join-Path $lekUI 'LEKFairTrades.lua'
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'UI\LEKFairTrades.lua') -Destination $installedLua -Force
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'UI\LEKFairTrades.lua') -Destination (Join-Path $lekUI 'LEKFairTrades.lua') -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'UI\LEKFairTrades.xml') -Destination (Join-Path $lekUI 'LEKFairTrades.xml') -Force
-
-    # v1.0.3 keeps the empty Fair Trades context active so the short bounded
-    # turn-start queue retry actually receives update ticks. It contains no UI
-    # controls and therefore creates no visible popup/window.
-    $hotfix=Join-Path $PSScriptRoot 'ApplyRuntimeHotfix.ps1'
-    if(!(Test-Path -LiteralPath $hotfix -PathType Leaf)){ throw 'Fair Trades v1.0.3 runtime hotfix script is missing.' }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $hotfix -RuntimePath $installedLua
-    if($LASTEXITCODE -ne 0){ throw 'Fair Trades v1.0.3 runtime hotfix failed.' }
 
     W ''
     W 'Running Fair Trades verifier...' Cyan
@@ -63,8 +54,8 @@ try {
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.0.3 INSTALLED.' Green
-    W 'Active empty context + bounded turn-start queue retry are enabled.' Green
+    W 'FAIR TRADES v1.0.4 INSTALLED.' Green
+    W 'Transient event-driven turn-ready signal is enabled; no per-frame retry is used.' Green
     W 'No EUI LeaderHeadRoot.lua patch was required.' Green
     exit 0
 } catch {

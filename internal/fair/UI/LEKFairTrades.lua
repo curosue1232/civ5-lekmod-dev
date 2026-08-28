@@ -1,8 +1,9 @@
--- LEKMOD 30.7 Fair Trades v1.1.4c DEFERRED UI HOTFIX
+-- LEKMOD 30.7 Fair Trades v1.1.4d DEFERRED UI VALIDATION HOTFIX
 -- One selected AI backend trade session, no native trade-helper UI calls.
 -- Build/value exact luxury / Gold / GPT candidates before the human trade UI opens.
+-- Reserve one native-value evaluation to re-check the exact rebuilt display deal.
 
-print("LEK Fair Trades v1.1.4c DEFERRED UI HOTFIX: loading")
+print("LEK Fair Trades v1.1.4d DEFERRED UI VALIDATION HOTFIX: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
@@ -10,6 +11,7 @@ local VERSION=114
 local DB_VERSION=1
 local MIN_OFFER_GAP=2
 local MAX_EVALS=8
+local SEARCH_EVAL_LIMIT=MAX_EVALS-1
 
 -- LEK_FAIR_TRADES_DIRECT_VALUE_V114
 if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
@@ -27,8 +29,8 @@ local function Reason(r)
 end
 
 S("RuntimePatch","V114_DIRECT_NATIVE_VALUE_NO_TRADE_HELPERS")
-S("RuntimeHotfix","V114C_DEFERRED_UI_ENDPOINT_RETRY")
-S("OfferEngine","ONE_AI_BACKEND_SESSION_DIRECT_NATIVE_VALUE_V114C")
+S("RuntimeHotfix","V114D_DEFERRED_UI_DISPLAY_REVALIDATE")
+S("OfferEngine","ONE_AI_BACKEND_SESSION_DIRECT_NATIVE_VALUE_V114D")
 S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V114")
 S("StrategicResources","NEVER")
 S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
@@ -36,8 +38,9 @@ S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
 S("TradeSessionPolicy","BACKEND_SESSION_FIRST_UI_ONLY_AFTER_VALID_CANDIDATE")
 S("NativeHelperPolicy","NONE_NO_DOWHATWILLGIVE_NO_DOWHATWANT_NO_EQUALIZE")
 S("ScratchDealPolicy","DIRECT_BUILD_VALIDATE_SHOW_SAME_SCRATCH")
-S("DeferredUIPolicy","VALIDATE_BACKEND_THEN_UI_THEN_REBUILD_EXACT_CANDIDATE")
+S("DeferredUIPolicy","VALIDATE_BACKEND_THEN_UI_REBUILD_THEN_REVALIDATE_EXACT_CANDIDATE")
 S("NativeEvalBudget",MAX_EVALS)
+S("SearchNativeEvalBudget",SEARCH_EVAL_LIMIT)
 
 local lastScanTurn=-99999
 local lastScanHuman=-1
@@ -196,7 +199,7 @@ local function PickRes(list,seed)
 end
 
 local function TrySwap(d,ai,h,hr,ar)
-  if evals+1>MAX_EVALS then return nil,"NATIVE_EVAL_BUDGET" end
+  if evals+1>SEARCH_EVAL_LIMIT then return nil,"NATIVE_SEARCH_EVAL_BUDGET" end
   Prep(d,h,ai)
   if not AddLux(d,h,ai,hr) then return nil,"HUMAN_SWAP_LUX_NOT_POSSIBLE" end
   if not AddLux(d,ai,h,ar) then return nil,"AI_SWAP_LUX_NOT_POSSIBLE" end
@@ -217,7 +220,7 @@ local function BuildCurrencyDeal(d,ai,h,seller,buyer,res,currency,amount)
 end
 
 local function TryCurrency(d,ai,h,seller,buyer,res,currency)
-  if evals+3>MAX_EVALS then return nil,"NATIVE_EVAL_BUDGET" end
+  if evals+3>SEARCH_EVAL_LIMIT then return nil,"NATIVE_SEARCH_EVAL_BUDGET" end
   Prep(d,h,ai)
   if not AddLux(d,seller,buyer,res) then return nil,"LUXURY_NOT_POSSIBLE" end
   local luxV,why=Eval(d,ai,h)
@@ -259,7 +262,7 @@ local function TryCurrency(d,ai,h,seller,buyer,res,currency)
   finalV,why=Eval(d,ai,h)
   if not finalV then return nil,why end
 
-  if not BothFair(finalV) and evals<MAX_EVALS then
+  if not BothFair(finalV) and evals<SEARCH_EVAL_LIMIT then
     local retryAmount=nil
     local sellerOK=FairFor(finalV,seller,ai)
     local buyerOK=FairFor(finalV,buyer,ai)
@@ -301,7 +304,7 @@ local function TryShapes(d,ai,h,turn,hl,al)
   local lastWhy="NO_SHAPES"
   for _,shape in ipairs(shapes) do
     local cost=(shape=="SWAP") and 1 or 3
-    if evals+cost>MAX_EVALS then break end
+    if evals+cost>SEARCH_EVAL_LIMIT then break end
     local c,why=nil,"UNKNOWN_SHAPE"
     if shape=="SWAP" then c,why=TrySwap(d,ai,h,PickRes(hl,turn.."|"..ai.."|SWAP_H"),PickRes(al,turn.."|"..ai.."|SWAP_A"))
     elseif shape=="HUMAN_GOLD" then c,why=TryCurrency(d,ai,h,h,ai,PickRes(hl,turn.."|"..ai.."|H_GOLD"),"GOLD")
@@ -362,6 +365,8 @@ local function ShowOneOffer(seed,h,turn)
   if #hl==0 and #al==0 then return false,"NO_LONGER_HAS_SPARE_LUXURY" end
 
   evals=0; S("OfferNativeEvals",0); S("NativeUIHeartbeat","BACKEND_SESSION_OPEN_BEGIN")
+  S("DisplayValidation","NOT_REACHED")
+  S("NativeUIErrorUIOpened",0)
   local backendOpened=false
   local uiOpened=false
   local candidate=nil
@@ -377,6 +382,15 @@ local function ShowOneOffer(seed,h,turn)
     uiOpened=true
     local built,buildWhy=BuildCandidate(d,candidate,h,ai)
     if not built then error(buildWhy) end
+
+    -- UI.OnHumanOpenedTradeScreen may reset/mutate scratch state. Re-evaluate the
+    -- exact rebuilt candidate before handing it to the AI-offer UI. One eval is
+    -- reserved specifically for this display validation.
+    local displayV,displayWhy=Eval(d,ai,h)
+    if not displayV then error("DISPLAY_NATIVE_VALUE_"..tostring(displayWhy)) end
+    if not BothFair(displayV) then error("DISPLAY_NATIVE_VALUE_GATE") end
+    S("DisplayValidation","BOTH_FAIR")
+
     S("LastShownAI",ai); S("LastShownTurn",Game.GetGameTurn()); S("LastShownShape",candidate.shape or "")
     S("NativeUIHeartbeat","UI_OPEN_EXACT_CANDIDATE_READY")
     Events.AILeaderMessage(ai,DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER,
@@ -384,6 +398,8 @@ local function ShowOneOffer(seed,h,turn)
   end)
   if not ok then
     S("NativeUIHeartbeat","ONE_SESSION_ERROR"); S("NativeUIError",tostring(e))
+    S("NativeUIErrorUIOpened",uiOpened and 1 or 0)
+    if uiOpened then S("DisplayValidation","ERROR_AFTER_UI_OPEN") end
     if backendOpened then CloseSession(ai) end
     return false,tostring(e)
   end
@@ -442,6 +458,6 @@ local function Finish() if retryRegistered or retryArmed then RemoveRetry() end 
 Events.ActivePlayerTurnStart.Add(Start)
 if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
 S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)
-S("PerformanceModel","ONE_AI_BACKEND_SESSION_MAX_8_NATIVE_VALUE_CALLS_UI_ONLY_AFTER_VALID_CANDIDATE")
+S("PerformanceModel","ONE_AI_BACKEND_SESSION_MAX_7_SEARCH_PLUS_1_DISPLAY_NATIVE_VALUE_CALL_UI_ONLY_AFTER_VALID_CANDIDATE")
 S("RelationshipModel","GUARDED_5_NEUTRAL_3_FRIENDLY_AFRAID_2")
-print("LEK Fair Trades v1.1.4c DEFERRED UI HOTFIX: ready")
+print("LEK Fair Trades v1.1.4d DEFERRED UI VALIDATION HOTFIX: ready")

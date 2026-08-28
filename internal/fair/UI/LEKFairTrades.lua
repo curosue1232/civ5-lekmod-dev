@@ -1,9 +1,8 @@
--- LEKMOD 30.7 Fair Trades v1.1.4e CRASH-SAFE DEFERRED UI HOTFIX
--- One selected AI backend trade session, no native trade-helper UI calls.
--- Build/value exact luxury / Gold / GPT candidates before the human trade UI opens.
--- After UI opens, rebuild the already-validated candidate only; no native value calls.
+-- LEKMOD 30.7 Fair Trades v1.1.4e2 PROVEN AI-OFFER HANDOFF HOTFIX
+-- Search and native-value all exact luxury / Gold / GPT candidates before opening any AI trade session.
+-- Once a candidate is validated, use the proven v1.0.8 handoff with no probes between/open after UI transition.
 
-print("LEK Fair Trades v1.1.4e CRASH-SAFE DEFERRED UI HOTFIX: loading")
+print("LEK Fair Trades v1.1.4e2 PROVEN AI-OFFER HANDOFF HOTFIX: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
@@ -30,15 +29,16 @@ end
 
 S("RuntimePatch","V114_DIRECT_NATIVE_VALUE_NO_TRADE_HELPERS")
 S("RuntimeHotfix","V114E_NO_POST_UI_NATIVE_VALUE")
-S("OfferEngine","ONE_AI_BACKEND_SESSION_DIRECT_NATIVE_VALUE_V114E")
+S("HandoffHotfix","V114E2_PRESESSION_SEARCH_TIGHT_AI_OFFER_HANDOFF")
+S("OfferEngine","ONE_AI_PRESESSION_SEARCH_DIRECT_NATIVE_VALUE_V114E2")
 S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V114")
 S("StrategicResources","NEVER")
 S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
 S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
-S("TradeSessionPolicy","BACKEND_SESSION_FIRST_UI_ONLY_AFTER_VALID_CANDIDATE")
+S("TradeSessionPolicy","PRESESSION_SEARCH_THEN_TIGHT_AI_OFFER_HANDOFF")
 S("NativeHelperPolicy","NONE_NO_DOWHATWILLGIVE_NO_DOWHATWANT_NO_EQUALIZE")
 S("ScratchDealPolicy","DIRECT_BUILD_VALIDATE_SHOW_SAME_SCRATCH")
-S("DeferredUIPolicy","VALIDATE_BACKEND_THEN_UI_REBUILD_NO_POST_UI_NATIVE_VALUE")
+S("DeferredUIPolicy","PRESESSION_VALIDATE_THEN_OPEN_UI_DIRECT_REBUILD_NO_POST_OPEN_PROBES")
 S("NativeEvalBudget",MAX_EVALS)
 S("SearchNativeEvalBudget",SEARCH_EVAL_LIMIT)
 
@@ -233,7 +233,7 @@ local function TryCurrency(d,ai,h,seller,buyer,res,currency)
   local unitAdded=false
   if currency=="GOLD" then unitAdded=AddGold(d,buyer,seller,1)
   else unitAdded=AddGPT(d,buyer,seller,1) end
-  if not unitAdded then return nil,"CURRENCY_UNIT_NOT_POSSIBLE_IN_BACKEND_SESSION" end
+  if not unitAdded then return nil,"CURRENCY_UNIT_NOT_POSSIBLE_PRESESSION" end
   local unitV
   unitV,why=Eval(d,ai,h)
   if not unitV then return nil,why end
@@ -339,20 +339,24 @@ local function FindOneAI(h,turn)
   return nil,"NO_DUE_AI_WITH_SPARE_LUXURY"
 end
 
-local function BuildCandidate(d,c,h,ai)
+-- Rebuild only an already-validated candidate after the UI transition.
+-- Deliberately performs no IsPossibleToTradeItem or native value calls.
+local function RebuildCandidate(d,c,h,ai)
   Prep(d,h,ai)
   if c.kind=="SWAP" then
-    if not AddLux(d,h,ai,c.humanRes) then return false,"DISPLAY_HUMAN_LUX_NOT_POSSIBLE" end
-    if not AddLux(d,ai,h,c.aiRes) then return false,"DISPLAY_AI_LUX_NOT_POSSIBLE" end
+    d:AddResourceTrade(h,c.humanRes,1,Duration())
+    d:AddResourceTrade(ai,c.aiRes,1,Duration())
+    return true,"OK"
+  elseif c.kind=="GOLD" then
+    d:AddResourceTrade(c.seller,c.res,1,Duration())
+    d:AddGoldTrade(c.buyer,c.amount)
+    return true,"OK"
+  elseif c.kind=="GPT" then
+    d:AddResourceTrade(c.seller,c.res,1,Duration())
+    d:AddGoldPerTurnTrade(c.buyer,c.amount,Duration())
     return true,"OK"
   end
-  if not AddLux(d,c.seller,c.buyer,c.res) then return false,"DISPLAY_LUX_NOT_POSSIBLE" end
-  if c.kind=="GOLD" then
-    if not AddGold(d,c.buyer,c.seller,c.amount) then return false,"DISPLAY_GOLD_NOT_POSSIBLE" end
-  elseif c.kind=="GPT" then
-    if not AddGPT(d,c.buyer,c.seller,c.amount) then return false,"DISPLAY_GPT_NOT_POSSIBLE" end
-  else return false,"DISPLAY_UNKNOWN_CANDIDATE_KIND" end
-  return true,"OK"
+  return false,"DISPLAY_UNKNOWN_CANDIDATE_KIND"
 end
 local function CloseSession(ai) pcall(function() Players[ai]:DoTradeScreenClosed(false) end) end
 
@@ -364,7 +368,7 @@ local function ShowOneOffer(seed,h,turn)
   local hl,al=SpareLux(h,ai),SpareLux(ai,h)
   if #hl==0 and #al==0 then return false,"NO_LONGER_HAS_SPARE_LUXURY" end
 
-  evals=0; S("OfferNativeEvals",0); S("NativeUIHeartbeat","BACKEND_SESSION_OPEN_BEGIN")
+  evals=0; S("OfferNativeEvals",0); S("NativeUIHeartbeat","PRESESSION_SEARCH_BEGIN")
   S("DisplayValidation","NOT_REACHED")
   S("NativeUIErrorUIOpened",0)
   local backendOpened=false
@@ -372,20 +376,30 @@ local function ShowOneOffer(seed,h,turn)
   local candidate=nil
   local failWhy="NO_DIRECT_NATIVE_VALUE_DEAL"
   local ok,e=pcall(function()
-    Players[ai]:DoTradeScreenOpened()
-    backendOpened=true
     local d=UI.GetScratchDeal()
     candidate,failWhy=TryShapes(d,ai,h,turn,hl,al)
-    if not candidate then return end
-    S("NativeUIHeartbeat","VALID_CANDIDATE_BEFORE_UI"); S("LastCandidateShape",candidate.shape or "")
+    if not candidate then
+      pcall(function() d:ClearItems() end)
+      return
+    end
+
+    S("NativeUIHeartbeat","VALID_CANDIDATE_PRESESSION")
+    S("LastCandidateShape",candidate.shape or "")
+
+    -- Proven v1.0.8 handoff: once the candidate exists, open the native AI
+    -- trade session and human trade UI back-to-back. Do no candidate search,
+    -- value calls, or possibility probes while this session is open.
+    Players[ai]:DoTradeScreenOpened()
+    backendOpened=true
     UI.OnHumanOpenedTradeScreen(ai)
     uiOpened=true
-    local built,buildWhy=BuildCandidate(d,candidate,h,ai)
+
+    local built,buildWhy=RebuildCandidate(d,candidate,h,ai)
     if not built then error(buildWhy) end
-    S("DisplayValidation","REBUILT_NO_POST_UI_NATIVE_VALUE")
+    S("DisplayValidation","DIRECT_REBUILD_NO_POST_OPEN_PROBES")
 
     S("LastShownAI",ai); S("LastShownTurn",Game.GetGameTurn()); S("LastShownShape",candidate.shape or "")
-    S("NativeUIHeartbeat","UI_OPEN_EXACT_CANDIDATE_READY")
+    S("NativeUIHeartbeat","AI_OFFER_HANDOFF_READY")
     Events.AILeaderMessage(ai,DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER,
       "I have a trade proposal that I believe is fair to both of us.",-1,0)
   end)
@@ -398,8 +412,7 @@ local function ShowOneOffer(seed,h,turn)
   end
   if not candidate then
     S("LastNativeReject",failWhy or "")
-    if backendOpened then CloseSession(ai) end
-    S("NativeUIHeartbeat","BACKEND_SESSION_CLOSED_NO_DEAL_NO_UI")
+    S("NativeUIHeartbeat","PRESESSION_NO_DEAL_NO_UI")
     return false,failWhy
   end
   if not uiOpened then if backendOpened then CloseSession(ai) end; return false,"VALID_CANDIDATE_UI_NOT_OPENED" end
@@ -423,8 +436,8 @@ local function Scan()
   local seed,why=FindOneAI(h,turn)
   if not seed then Reason(why); return end
   local shown,showWhy=ShowOneOffer(seed,h,turn)
-  if shown then lastShownTurn=turn; Reason("DEFERRED_UI_DIRECT_VALUE_OFFER_SENT")
-  else S("LastShowReject",showWhy or ""); Reason("ONE_SELECTED_AI_NO_DEFERRED_UI_DIRECT_DEAL") end
+  if shown then lastShownTurn=turn; Reason("PRESESSION_SEARCH_AI_OFFER_SENT")
+  else S("LastShowReject",showWhy or ""); Reason("ONE_SELECTED_AI_NO_PRESESSION_DIRECT_DEAL") end
 end
 
 local Ready
@@ -451,6 +464,6 @@ local function Finish() if retryRegistered or retryArmed then RemoveRetry() end 
 Events.ActivePlayerTurnStart.Add(Start)
 if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
 S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)
-S("PerformanceModel","ONE_AI_BACKEND_SESSION_MAX_8_PRE_UI_NATIVE_VALUE_CALLS_NO_POST_UI_NATIVE_VALUE")
+S("PerformanceModel","MAX_8_PRESESSION_NATIVE_VALUE_CALLS_TIGHT_AI_OFFER_HANDOFF_NO_POST_OPEN_PROBES")
 S("RelationshipModel","GUARDED_5_NEUTRAL_3_FRIENDLY_AFRAID_2")
-print("LEK Fair Trades v1.1.4e CRASH-SAFE DEFERRED UI HOTFIX: ready")
+print("LEK Fair Trades v1.1.4e2 PROVEN AI-OFFER HANDOFF HOTFIX: ready")

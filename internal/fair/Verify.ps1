@@ -5,7 +5,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.10 CANDIDATE ENGINE VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.1.0 SIMPLE NATIVE VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -35,19 +35,20 @@ try {
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
         Check 'runtime version 110' $t.Contains('local VERSION=110')
-        Check 'v110 candidate engine marker' $t.Contains('-- LEK_FAIR_TRADES_CANDIDATE_ENGINE_V110')
-        Check 'multi-swap search cap' $t.Contains('local MAX_SWAP_PAIRS=3')
-        Check 'lazy GPT pricing order' ($t.Contains('GOLD_FIRST') -and $t.Contains('GPT_AFTER_GOLD'))
-        Check 'balanced luxury swap candidate' $t.Contains('LUXURY_SWAP_PLUS_GOLD')
+        Check 'v1.1.0 simple native marker' $t.Contains('-- LEK_FAIR_TRADES_SIMPLE_NATIVE_V110')
+        Check 'simple native runtime patch' $t.Contains('V110_SIMPLE_NATIVE_EQUALIZER')
+        Check '4-attempt native build ceiling' $t.Contains('local MAX_ATTEMPTS=4')
+        Check 'native give helper' $t.Contains('UI.DoWhatWillAIGive')
+        Check 'native want helper' $t.Contains('UI.DoWhatDoesAIWant')
+        Check 'native equalizer helper' $t.Contains('UI.DoEqualizeDealWithHuman')
+        Check 'no custom deal value math' (-not ($t.Contains('GetDealMyValue') -or $t.Contains('GetDealTheyreValue') -or $t.Contains('local MAX_EVALS=')))
         Check 'unique Fair Trades offer message' $t.Contains('I have a trade proposal that I believe is fair to both of us.')
         Check 'no DoBeginDiploWithHuman' (-not $t.Contains('DoBeginDiploWithHuman'))
         Check 'native AI offer state' $t.Contains('DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER')
-        Check 'native trade screen open' ($t.Contains('DoTradeScreenOpened()') -and $t.Contains('UI.OnHumanOpenedTradeScreen'))
-        Check 'silent native valuation' ($t.Contains('GetDealMyValue') -and $t.Contains('GetDealTheyreValue'))
-        Check 'no visible native pricing helpers' (-not ($t.Contains('UI.DoWhatWillAIGive') -or $t.Contains('UI.DoWhatDoesAIWant')))
+        Check 'native trade session open' ($t.Contains('DoTradeScreenOpened()') -and $t.Contains('UI.OnHumanOpenedTradeScreen'))
         Check 'luxury gold GPT only' $t.Contains('LUXURY_GOLD_GPT_ONLY_V110')
         Check 'strategics never' $t.Contains('S("StrategicResources","NEVER")')
-        Check '8-evaluation ceiling' $t.Contains('local MAX_EVALS=8')
+        Check 'human last luxury protected' $t.Contains('HUMAN_LAST_LUXURY_COPY')
         Check 'no SetUpdate scanner' (-not $t.Contains('ContextPtr:SetUpdate'))
         Check 'no load bootstrap event' (-not $t.Contains('SequenceGameInitComplete.Add'))
         Check 'real turn-start hook' $t.Contains('Events.ActivePlayerTurnStart.Add(Start)')
@@ -73,7 +74,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.0.10 CANDIDATE ENGINE VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.1.0 SIMPLE NATIVE VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

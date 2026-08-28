@@ -98,13 +98,42 @@ On the test machine, launch `LEK_DEV_TOOL.bat` and press **T**. The cycle perfor
 
 If runtime behavior fails, use Dev Tool option 7 once and upload the diagnostic ZIP.
 
+## External AI reviewer bootstrap — direct URLs
+
+Some external browsing tools can open a known GitHub file but cannot crawl GitHub directory listings. **Do not browse `/tree/` pages and do not search for these files. Open these exact URLs directly.**
+
+Primary Fair Trades runtime:
+
+- GitHub blob: `https://github.com/curosue1232/civ5-lekmod-dev/blob/main/internal/fair/UI/LEKFairTrades.lua`
+- Raw: `https://raw.githubusercontent.com/curosue1232/civ5-lekmod-dev/main/internal/fair/UI/LEKFairTrades.lua`
+
+Fair Trades XML context:
+
+- GitHub blob: `https://github.com/curosue1232/civ5-lekmod-dev/blob/main/internal/fair/UI/LEKFairTrades.xml`
+- Raw: `https://raw.githubusercontent.com/curosue1232/civ5-lekmod-dev/main/internal/fair/UI/LEKFairTrades.xml`
+
+Installer:
+
+- GitHub blob: `https://github.com/curosue1232/civ5-lekmod-dev/blob/main/internal/fair/Install.ps1`
+- Raw: `https://raw.githubusercontent.com/curosue1232/civ5-lekmod-dev/main/internal/fair/Install.ps1`
+
+Verifier:
+
+- GitHub blob: `https://github.com/curosue1232/civ5-lekmod-dev/blob/main/internal/fair/Verify.ps1`
+- Raw: `https://raw.githubusercontent.com/curosue1232/civ5-lekmod-dev/main/internal/fair/Verify.ps1`
+
+One-click development tool:
+
+- GitHub blob: `https://github.com/curosue1232/civ5-lekmod-dev/blob/main/internal/DevTool.ps1`
+- Raw: `https://raw.githubusercontent.com/curosue1232/civ5-lekmod-dev/main/internal/DevTool.ps1`
+
+Important: the Fair Trades runtime path is **`internal/fair/UI/LEKFairTrades.lua`**. There is no current runtime at `internal/fair/LEKFairTrades.lua`.
+
+If a GitHub blob URL fails in the external tool, try the matching `raw.githubusercontent.com` URL directly. Do not fall back to directory crawling.
+
 ## External AI reviewer instructions
 
-If you are Claude Desktop or another external reviewer, start with this file and then read the latest `main` versions of:
-
-- `internal/fair/UI/LEKFairTrades.lua`
-- `internal/fair/Install.ps1`
-- `internal/fair/Verify.ps1`
+If you are Claude Desktop or another external reviewer, start with this file. Then open the exact direct URLs in the bootstrap section above. Do not require `AI_HANDOFF.md` or `internal/docs/CLAUDE_REVIEW_PROMPT.md`; all necessary review instructions are included here.
 
 Do not assume code from an older chat message is still current if GitHub differs.
 

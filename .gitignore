@@ -1,0 +1,18 @@
+# Machine-local configuration
+local/
+
+# Diagnostics and logs
+LEK_DEV_STATE_*.zip
+LEK_RAS_STATE_*.zip
+*.log
+
+# Installer-created backups
+**/*.base
+**/*.bak
+**/*_backup*
+
+# OS/editor noise
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/

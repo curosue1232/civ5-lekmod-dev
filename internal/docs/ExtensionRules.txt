@@ -1,0 +1,62 @@
+LEK CLEAN EXTENSION CONTRACT v1.1
+=================================
+
+FROZEN FOUNDATION
+-----------------
+LEK Core v1.3 is immutable. Future feature work is an extension layer.
+Do not rewrite/rebundle core component logic merely to update an extension.
+
+FAIR TRADES ALLOWED EXISTING-FILE TOUCHPOINTS
+---------------------------------------------
+1. Assets\DLC\LEKMOD_V30.7\UI\InGame.lua
+   One stable loader block only:
+     -- LEK_EXT_FAIR_TRADES_LOADER_BEGIN
+     ...
+     -- LEK_EXT_FAIR_TRADES_LOADER_END
+
+2. Assets\DLC\UI_bc1\LeaderHead\LeaderHeadRoot.lua
+   One stable native-UI bridge block only:
+     -- LEK_EXT_FAIR_TRADES_NATIVE_BRIDGE_BEGIN
+     ...
+     -- LEK_EXT_FAIR_TRADES_NATIVE_BRIDGE_END
+
+If the exact EUI LeaderHeadRoot path differs, detect it; never patch multiple copies.
+
+OWNED RUNTIME FILES
+-------------------
+Use stable, non-versioned filenames:
+  LEKFairTrades.lua
+  LEKFairTrades.xml
+
+Version belongs inside the runtime and installer metadata, not in the filename.
+An update replaces these files instead of leaving V032/V033/V034/V035 debris.
+
+INSTALL/UPDATE RULES
+--------------------
+- Installer must be idempotent.
+- Replace the stable marked block; never append version-specific blocks.
+- Back up each shared target once before first Fair Trades modification.
+- Never restore an entire stale backup during normal uninstall.
+- Uninstall removes only owned stable blocks/files.
+- Verify exact markers and owned runtime after every install/update.
+- Fail before changing anything if core baseline or target file is missing.
+- Close Civilization V before install/update/uninstall.
+
+PERFORMANCE CONTRACT
+--------------------
+- No ContextPtr:SetUpdate scanning.
+- No SerialEventGameDataDirty offer scanning.
+- At most one authoritative offer-generation pass per relevant human turn.
+- Hard native-deal-evaluation budget per pass.
+- No failure-triggered background retry loop.
+- Diagnostics must expose evaluation count and scan reason.
+
+UI CONTRACT
+-----------
+Visible offers use the existing Civ V/EUI trade screen.
+No custom trade popup/window unless explicitly chosen later.
+
+DEBUG CONTRACT
+--------------
+CAPTURE_DEV_STATE.bat is the canonical one-file diagnostic handoff.
+Future builds should add their own version/state markers so the collector captures them.

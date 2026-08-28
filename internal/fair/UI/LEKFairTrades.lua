@@ -209,7 +209,9 @@ end
 local function BuildCurrencyDeal(d,ai,h,seller,buyer,res,currency,amount)
   Prep(d,h,ai)
   if not AddLux(d,seller,buyer,res) then return false,"CURRENCY_LUXURY_NOT_POSSIBLE" end
-  local paid=(currency=="GOLD") and AddGold(d,buyer,seller,amount) or AddGPT(d,buyer,seller,amount)
+  local paid=false
+  if currency=="GOLD" then paid=AddGold(d,buyer,seller,amount)
+  else paid=AddGPT(d,buyer,seller,amount) end
   if not paid then return false,"CURRENCY_PAYMENT_NOT_POSSIBLE" end
   return true,"OK"
 end
@@ -225,7 +227,9 @@ local function TryCurrency(d,ai,h,seller,buyer,res,currency)
   if sellerNeeds<=0 or buyerMaxValue<=0 then return nil,"LUXURY_NATIVE_VALUE_ZERO" end
 
   Prep(d,h,ai)
-  local unitAdded=(currency=="GOLD") and AddGold(d,buyer,seller,1) or AddGPT(d,buyer,seller,1)
+  local unitAdded=false
+  if currency=="GOLD" then unitAdded=AddGold(d,buyer,seller,1)
+  else unitAdded=AddGPT(d,buyer,seller,1) end
   if not unitAdded then return nil,"CURRENCY_UNIT_NOT_POSSIBLE_IN_BACKEND_SESSION" end
   local unitV
   unitV,why=Eval(d,ai,h)

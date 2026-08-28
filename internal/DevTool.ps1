@@ -55,7 +55,7 @@ function Run-Script([string]$Rel,[string[]]$Extra=@()){
     if(!(Test-Path -LiteralPath $script -PathType Leaf)){ throw ('Missing workspace script: '+$Rel) }
     $psArgs=@('-NoProfile','-ExecutionPolicy','Bypass','-File',$script,'-CivPath',$civ) + $Extra
     & powershell.exe @psArgs
-    return $LASTEXITCODE
+    return [int]$LASTEXITCODE
 }
 
 function Set-PathInteractive {
@@ -93,18 +93,19 @@ function Sync-Git {
     }
     Push-Location $Root
     try {
-        & git.exe status --short
-        if($LASTEXITCODE -ne 0){ return $LASTEXITCODE }
-        & git.exe pull --ff-only
-        return $LASTEXITCODE
+        & git.exe status --short 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+        $ec=[int]$LASTEXITCODE
+        if($ec -ne 0){ return $ec }
+        & git.exe pull --ff-only 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+        return [int]$LASTEXITCODE
     } finally { Pop-Location }
 }
 
 function Show-Header {
     Clear-Host
     W '============================================================' Cyan
-    W ' LEKMOD 30.7 DEVELOPMENT TOOL v1.2' Cyan
-    W ' Frozen Core v1.3 + Clean Extension Workspace' Cyan
+    W ' LEKMOD 30.7 DEVELOPMENT TOOL v1.3' Cyan
+    W ' Frozen Core v1.3 + Isolated Development Extensions' Cyan
     W '============================================================' Cyan
     $p=Get-SavedCivPath
     if($p){ W ('Civ V: '+$p) Green } else { W 'Civ V: not saved yet' Yellow }
@@ -121,6 +122,9 @@ function Invoke-Action([string]$A){
         'fair-remove'  { return (Run-Script 'internal\fair\Uninstall.ps1') }
         'capture'   { return (Run-Script 'internal\CaptureState.ps1') }
         'sync'      { return (Sync-Git) }
+        'wonder-install' { return (Run-Script 'internal\ras-wonder\Install.ps1') }
+        'wonder-verify'  { return (Run-Script 'internal\ras-wonder\Verify.ps1') }
+        'wonder-remove'  { return (Run-Script 'internal\ras-wonder\Uninstall.ps1') }
         default     { throw ('Unknown action: '+$A) }
     }
 }
@@ -129,16 +133,19 @@ try {
     if($Action){ exit (Invoke-Action $Action) }
     while($true){
         Show-Header
-        W ' 1  Set / save Civilization V path' White
-        W ' 2  Baseline check (core + clean extension state)' White
-        W ' 3  Verify frozen Core v1.3' White
-        W ' 4  Install / update Fair Trades' White
-        W ' 5  Verify Fair Trades' White
-        W ' 6  Uninstall Fair Trades only' White
-        W ' 7  Capture ONE full diagnostic ZIP' White
-        W ' 8  Sync workspace from GitHub (git pull)' White
-        W ' G  One-time GitHub repository setup' White
-        W ' Q  Quit' White
+        W ' 1   Set / save Civilization V path' White
+        W ' 2   Baseline check (core + clean extension state)' White
+        W ' 3   Verify frozen Core v1.3' White
+        W ' 4   Install / update Fair Trades' White
+        W ' 5   Verify Fair Trades' White
+        W ' 6   Uninstall Fair Trades only' White
+        W ' 7   Capture ONE full diagnostic ZIP' White
+        W ' 8   Sync workspace from GitHub (git pull)' White
+        W ' 9   Install / update RAS wonder graphics hotfix' White
+        W ' 10  Verify RAS wonder graphics hotfix' White
+        W ' 11  Uninstall RAS wonder graphics hotfix' White
+        W ' G   One-time GitHub repository setup' White
+        W ' Q   Quit' White
         W ''
         $choice=(Read-Host 'Choose').Trim()
         if($choice -match '^[Qq]$'){ break }
@@ -153,9 +160,12 @@ try {
                 '6' { $ec=Invoke-Action 'fair-remove' }
                 '7' { $ec=Invoke-Action 'capture' }
                 '8' { $ec=Invoke-Action 'sync' }
+                '9' { $ec=Invoke-Action 'wonder-install' }
+                '10' { $ec=Invoke-Action 'wonder-verify' }
+                '11' { $ec=Invoke-Action 'wonder-remove' }
                 'G' {
                     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'internal\GitHubSetup.ps1')
-                    $ec=$LASTEXITCODE
+                    $ec=[int]$LASTEXITCODE
                 }
                 default { W 'Unknown choice.' Yellow; $ec=2 }
             }

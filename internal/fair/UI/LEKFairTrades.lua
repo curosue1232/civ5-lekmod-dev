@@ -1,20 +1,20 @@
--- LEKMOD 30.7 Fair Trades v1.1.5 EUI DIRECT OFFER BRIDGE
+-- LEKMOD 30.7 Fair Trades v1.1.6 MULTI-AI PRESESSION SEARCH
 -- Search/value exact Luxury / Gold / GPT candidates before opening the AI trade session.
 -- The visible offer is handed directly to EUI TradeLogic through a private LuaEvents bridge.
 -- No UI.OnHumanOpenedTradeScreen and no spoofed Events.AILeaderMessage call.
 
-print("LEK Fair Trades v1.1.5 EUI DIRECT OFFER BRIDGE: loading")
+print("LEK Fair Trades v1.1.6 MULTI-AI PRESESSION SEARCH: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
-local VERSION=115
+local VERSION=116
 local DB_VERSION=1
 local MIN_OFFER_GAP=2
 local MAX_EVALS=8
 local SEARCH_EVAL_LIMIT=MAX_EVALS
 local FAIR_MESSAGE="I have a trade proposal that I believe is fair to both of us."
 
--- LEK_FAIR_TRADES_EUI_DIRECT_OFFER_V115
+-- LEK_FAIR_TRADES_MULTI_AI_PRESESSION_V116
 if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
 MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION=VERSION
 
@@ -29,10 +29,10 @@ local function Reason(r)
   S("OfferScanTurn",t); S("OfferScanHuman",h)
 end
 
-S("RuntimePatch","V115_EUI_DIRECT_OFFER_BRIDGE")
-S("RuntimeHotfix","V115_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT")
-S("OfferEngine","ONE_AI_PRESESSION_SEARCH_EUI_DIRECT_OFFER_V115")
-S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V115")
+S("RuntimePatch","V116_MULTI_AI_PRESESSION_SEARCH")
+S("RuntimeHotfix","V116_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT")
+S("OfferEngine","MULTI_AI_SHARED_BUDGET_EUI_DIRECT_OFFER_V116")
+S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V116")
 S("StrategicResources","NEVER")
 S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
 S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
@@ -320,25 +320,45 @@ local function TryShapes(d,ai,h,turn,hl,al)
   return nil,lastWhy
 end
 
-local function FindOneAI(h,turn)
-  local ais={}
-  for ai=0,GameDefines.MAX_MAJOR_CIVS-1 do if CanTrade(ai,h) then table.insert(ais,ai) end end
-  table.sort(ais); S("OfferScanEligibleAIs",#ais)
-  if #ais==0 then return nil,"NO_ELIGIBLE_AI" end
-  local start=(Hash(turn.."|"..h.."|AI")%#ais)+1
-  local due=0
-  for n=0,#ais-1 do
-    local ai=ais[((start-1+n)%#ais)+1]
-    if Due(ai,h,turn) then
-      due=due+1
-      local hl,al=SpareLux(h,ai),SpareLux(ai,h)
-      S("AI_"..ai.."_HumanSpareLuxCount",#hl); S("AI_"..ai.."_AISpareLuxCount",#al)
-      if #hl>0 or #al>0 then S("OfferDueAIs",due); return {ai=ai,hl=hl,al=al},"OK" end
+local function FindCandidate(h,turn)
+  local ok,seed,reason=pcall(function()
+    local ais={}
+    for ai=0,GameDefines.MAX_MAJOR_CIVS-1 do if CanTrade(ai,h) then table.insert(ais,ai) end end
+    table.sort(ais); S("OfferScanEligibleAIs",#ais)
+    if #ais==0 then return nil,"NO_ELIGIBLE_AI" end
+    local start=(Hash(turn.."|"..h.."|AI")%#ais)+1
+    local due=0
+    local d=UI.GetScratchDeal()
+    evals=0; S("OfferNativeEvals",0); S("NativeUIHeartbeat","PRESESSION_MULTI_AI_SEARCH_BEGIN")
+    for n=0,#ais-1 do
+      local ai=ais[((start-1+n)%#ais)+1]
+      if Due(ai,h,turn) then
+        due=due+1
+        local hl,al=SpareLux(h,ai),SpareLux(ai,h)
+        S("AI_"..ai.."_HumanSpareLuxCount",#hl); S("AI_"..ai.."_AISpareLuxCount",#al)
+        if #hl>0 or #al>0 then
+          local candidate,why=TryShapes(d,ai,h,turn,hl,al)
+          if candidate then
+            S("OfferVisitedDueAIs",due); S("OfferSearchWinnerAI",ai)
+            return {ai=ai,hl=hl,al=al,candidate=candidate},"OK"
+          end
+          S("AI_"..ai.."_PartnerRejected",why or "")
+          pcall(function() d:ClearItems() end)
+        end
+        if evals>=MAX_EVALS then S("OfferSearchBudgetExhausted",1); break end
+      end
     end
+    S("OfferVisitedDueAIs",due)
+    if due==0 then return nil,"RELATIONSHIP_SCHEDULE_NOT_DUE" end
+    return nil,"NO_DUE_AI_WITH_FAIR_CANDIDATE"
+  end)
+  if not ok then
+    S("NativeUIHeartbeat","PRESESSION_MULTI_AI_SEARCH_ERROR")
+    S("NativeUIError",tostring(seed))
+    pcall(function() UI.GetScratchDeal():ClearItems() end)
+    return nil,"PRESESSION_MULTI_AI_SEARCH_ERROR"
   end
-  S("OfferDueAIs",due)
-  if due==0 then return nil,"RELATIONSHIP_SCHEDULE_NOT_DUE" end
-  return nil,"NO_DUE_AI_WITH_SPARE_LUXURY"
+  return seed,reason
 end
 
 -- Rebuild only an already-validated candidate after the backend AI session opens.
@@ -364,6 +384,8 @@ local function CloseSession(ai) pcall(function() Players[ai]:DoTradeScreenClosed
 
 local function ShowOneOffer(seed,h,turn)
   local ai=seed.ai
+  local candidate=seed.candidate
+  if not candidate then return false,"MISSING_PRESESSION_CANDIDATE" end
   if Game.GetActivePlayer()~=h or not Players[h]:IsTurnActive() then return false,"HUMAN_TURN_NOT_ACTIVE" end
   if Game.IsProcessingMessages and Game.IsProcessingMessages() then return false,"MESSAGE_QUEUE_BUSY" end
   if UI.GetLeaderHeadRootUp then local ok,up=pcall(UI.GetLeaderHeadRootUp); if ok and up then return false,"LEADER_SCREEN_ALREADY_OPEN" end end
@@ -376,20 +398,11 @@ local function ShowOneOffer(seed,h,turn)
   local hl,al=SpareLux(h,ai),SpareLux(ai,h)
   if #hl==0 and #al==0 then return false,"NO_LONGER_HAS_SPARE_LUXURY" end
 
-  evals=0; S("OfferNativeEvals",0); S("NativeUIHeartbeat","PRESESSION_SEARCH_BEGIN")
   S("EUIBridgeDispatch","NOT_REACHED")
   local backendOpened=false
-  local candidate=nil
-  local failWhy="NO_DIRECT_NATIVE_VALUE_DEAL"
   local ok,e=pcall(function()
     local d=UI.GetScratchDeal()
-    candidate,failWhy=TryShapes(d,ai,h,turn,hl,al)
-    if not candidate then
-      pcall(function() d:ClearItems() end)
-      return
-    end
-
-    S("NativeUIHeartbeat","VALID_CANDIDATE_PRESESSION")
+    S("NativeUIHeartbeat","VALID_MULTI_AI_CANDIDATE_PRESESSION")
     S("LastCandidateShape",candidate.shape or "")
 
     -- Open only the backend AI negotiation role. Do not use the human-opened
@@ -418,11 +431,6 @@ local function ShowOneOffer(seed,h,turn)
     if backendOpened then CloseSession(ai) end
     return false,tostring(e)
   end
-  if not candidate then
-    S("LastNativeReject",failWhy or "")
-    S("NativeUIHeartbeat","PRESESSION_NO_DEAL_NO_UI")
-    return false,failWhy
-  end
   S("NativeUIHeartbeat","ONE_SESSION_OFFER_SENT")
   return true,"OK"
 end
@@ -440,11 +448,11 @@ local function Scan()
   if turn==lastScanTurn and h==lastScanHuman then Reason("ALREADY_SCANNED_THIS_TURN"); return end
   lastScanTurn,lastScanHuman=turn,h
   if turn-lastShownTurn<MIN_OFFER_GAP then Reason("LOCAL_OFFER_COOLDOWN"); return end
-  local seed,why=FindOneAI(h,turn)
+  local seed,why=FindCandidate(h,turn)
   if not seed then Reason(why); return end
   local shown,showWhy=ShowOneOffer(seed,h,turn)
   if shown then lastShownTurn=turn; Reason("EUI_DIRECT_AI_OFFER_SENT")
-  else S("LastShowReject",showWhy or ""); Reason("ONE_SELECTED_AI_NO_EUI_DIRECT_DEAL") end
+  else S("LastShowReject",showWhy or ""); Reason("SELECTED_FAIR_CANDIDATE_NO_EUI_DIRECT_DEAL") end
 end
 
 local Ready
@@ -471,6 +479,6 @@ local function Finish() if retryRegistered or retryArmed then RemoveRetry() end 
 Events.ActivePlayerTurnStart.Add(Start)
 if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
 S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)
-S("PerformanceModel","ONE_AI_PRESESSION_MAX_8_NATIVE_VALUE_CALLS_DIRECT_EUI_HANDLER")
+S("PerformanceModel","MULTI_AI_SHARED_PRESESSION_MAX_8_NATIVE_VALUE_CALLS_DIRECT_EUI_HANDLER")
 S("RelationshipModel","GUARDED_5_NEUTRAL_3_FRIENDLY_AFRAID_2")
-print("LEK Fair Trades v1.1.5 EUI DIRECT OFFER BRIDGE: ready")
+print("LEK Fair Trades v1.1.6 MULTI-AI PRESESSION SEARCH: ready")

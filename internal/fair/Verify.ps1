@@ -18,7 +18,7 @@ function Get-FairEUITradeFiles([string]$Civ){
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.5 EUI DIRECT OFFER BRIDGE VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.1.6 MULTI-AI PRESESSION SEARCH VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -51,11 +51,11 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 115' $t.Contains('local VERSION=115')
-        Check 'v1.1.5 EUI direct-offer marker' $t.Contains('-- LEK_FAIR_TRADES_EUI_DIRECT_OFFER_V115')
-        Check 'v1.1.5 runtime patch' $t.Contains('V115_EUI_DIRECT_OFFER_BRIDGE')
-        Check 'no human-open/fake-event policy' $t.Contains('V115_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT')
-        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V115')
+        Check 'runtime version 116' $t.Contains('local VERSION=116')
+        Check 'v1.1.6 multi-AI presession marker' $t.Contains('-- LEK_FAIR_TRADES_MULTI_AI_PRESESSION_V116')
+        Check 'v1.1.6 runtime patch' $t.Contains('V116_MULTI_AI_PRESESSION_SEARCH')
+        Check 'no human-open/fake-event policy' $t.Contains('V116_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT')
+        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V116')
         Check 'currency offers both ways' $t.Contains('LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS')
         Check 'both sides preserve last copy' $t.Contains('BOTH_SIDES_PRESERVE_LAST_COPY')
         Check 'spare luxury requires two copies' $t.Contains('GetNumResourceAvailable(r.ID,true) or 0)>=2')
@@ -78,7 +78,12 @@ try {
         Check 'no SetUpdate scanner' (-not $t.Contains('ContextPtr:SetUpdate'))
         Check 'real turn-start hook' $t.Contains('Events.ActivePlayerTurnStart.Add(Start)')
 
-        $tryIndex=$t.IndexOf('candidate,failWhy=TryShapes')
+        Check 'multi-AI candidate search present' $t.Contains('local function FindCandidate')
+        Check 'multi-AI presession search protected' $t.Contains('local ok,seed,reason=pcall(function()')
+        Check 'shared evaluation budget reset once' ([regex]::Matches($t,'evals=0; S\("OfferNativeEvals",0\)').Count -eq 1)
+        Check 'candidate carried into display handoff' $t.Contains('local candidate=seed.candidate')
+        Check 'multi-AI rejection telemetry' $t.Contains('_PartnerRejected')
+        $tryIndex=$t.IndexOf('local candidate,why=TryShapes')
         $sessionIndex=$t.IndexOf('Players[ai]:DoTradeScreenOpened()')
         $rebuildIndex=$t.IndexOf('RebuildCandidate(d,candidate,h,ai)')
         $bridgeIndex=$t.IndexOf('LuaEvents.LEKFairTradesAIOffer(ai,FAIR_MESSAGE)')
@@ -139,7 +144,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.1.5 EUI DIRECT OFFER BRIDGE VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.1.6 MULTI-AI PRESESSION SEARCH VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

@@ -3,6 +3,18 @@ $ErrorActionPreference='Stop'
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'LekTools.ps1')
 function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -ForegroundColor $c }
 
+function Get-FairEUITradeFiles([string]$Civ){
+    $base=Join-LEKPath $Civ 'Assets\DLC\UI_bc1'
+    if(!(Test-LEKPath $base -Container)){ return $null }
+    $tradeLogic=Get-ChildItem -LiteralPath $base -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ieq 'TradeLogic.lua' -and (Test-LEKContains $_.FullName 'function LeaderMessageHandler') } |
+        Select-Object -ExpandProperty FullName -First 1
+    $owner=Get-ChildItem -LiteralPath $base -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ieq 'DiploTrade.lua' -and ((Test-LEKContains $_.FullName 'Events.AILeaderMessage.Add( LeaderMessageHandler') -or (Test-LEKContains $_.FullName '-- LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_BEGIN')) } |
+        Select-Object -ExpandProperty FullName -First 1
+    return [pscustomobject]@{ TradeLogic=$tradeLogic; Owner=$owner }
+}
+
 try {
     W '============================================================' Cyan
     W ' LEK FAIR TRADES - CLEAN EXTENSION UNINSTALL' Cyan
@@ -24,7 +36,8 @@ try {
     }
 
     # Remove the direct AI-offer bridge Fair Trades owns in EUI diplotrade.
-    $diploTrade=Join-LEKPath $civ 'Assets\DLC\UI_bc1\bugfixes\diplotrade.lua'
+    $euiTrade=Get-FairEUITradeFiles $civ
+    $diploTrade=$euiTrade.Owner
     if(Test-LEKPath $diploTrade){
         $dt=[IO.File]::ReadAllText($diploTrade)
         if($dt.Contains('-- LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_BEGIN')){
@@ -34,7 +47,7 @@ try {
     }
 
     # Restore only the optional EUI luxury conditional Fair Trades owns.
-    $tradeLogic=Join-LEKPath $civ 'Assets\DLC\UI_bc1\LeaderHead\TradeLogic.lua'
+    $tradeLogic=$euiTrade.TradeLogic
     if(Test-LEKPath $tradeLogic){
         $tl=[IO.File]::ReadAllText($tradeLogic)
         if($tl.Contains('-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN')){

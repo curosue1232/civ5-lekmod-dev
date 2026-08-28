@@ -4,6 +4,33 @@ $Root=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'LekTools.ps1')
 function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -ForegroundColor $c }
 
+function Get-FairEUITradeFiles([string]$Civ){
+    $base=Join-LEKPath $Civ 'Assets\DLC\UI_bc1'
+    if(!(Test-LEKPath $base -Container)){ return $null }
+    $tradeLogic=$null
+    $owner=$null
+    foreach($relative in @('LeaderHead\TradeLogic.lua')){
+        $p=Join-LEKPath $base $relative
+        if((Test-LEKPath $p) -and (Test-LEKContains $p 'function LeaderMessageHandler')){ $tradeLogic=$p; break }
+    }
+    if(!$tradeLogic){
+        $tradeLogic=Get-ChildItem -LiteralPath $base -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -ieq 'TradeLogic.lua' -and (Test-LEKContains $_.FullName 'function LeaderMessageHandler') } |
+            Select-Object -ExpandProperty FullName -First 1
+    }
+    foreach($relative in @('bugfixes\diplotrade.lua','Improvements\DiploTrade.lua')){
+        $p=Join-LEKPath $base $relative
+        if((Test-LEKPath $p) -and (Test-LEKContains $p 'Events.AILeaderMessage.Add( LeaderMessageHandler')){ $owner=$p; break }
+    }
+    if(!$owner){
+        $owner=Get-ChildItem -LiteralPath $base -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -ieq 'DiploTrade.lua' -and (Test-LEKContains $_.FullName 'Events.AILeaderMessage.Add( LeaderMessageHandler') } |
+            Select-Object -ExpandProperty FullName -First 1
+    }
+    if(!$tradeLogic -or !$owner){ return $null }
+    return [pscustomobject]@{ TradeLogic=$tradeLogic; Owner=$owner }
+}
+
 try {
     W '============================================================' Cyan
     W ' LEK FAIR TRADES v1.1.5 EUI DIRECT OFFER BRIDGE INSTALLER' Cyan
@@ -22,12 +49,13 @@ try {
     $lekUI=Join-LEKPath $civ 'Assets\DLC\LEKMOD_V30.7\UI'
     $inGame=Join-LEKPath $lekUI 'InGame.lua'
     $leader=Get-LEKLeaderRoot $civ
-    $tradeLogic=Join-LEKPath $civ 'Assets\DLC\UI_bc1\LeaderHead\TradeLogic.lua'
-    $diploTrade=Join-LEKPath $civ 'Assets\DLC\UI_bc1\bugfixes\diplotrade.lua'
+    $euiTrade=Get-FairEUITradeFiles $civ
+    $tradeLogic=if($euiTrade){$euiTrade.TradeLogic}else{$null}
+    $diploTrade=if($euiTrade){$euiTrade.Owner}else{$null}
     if(!(Test-LEKPath $inGame)){ throw 'Lekmod InGame.lua not found.' }
     if(!(Test-LEKPath $leader)){ throw 'EUI LeaderHeadRoot.lua not found.' }
-    if(!(Test-LEKPath $tradeLogic)){ throw 'EUI TradeLogic.lua not found at Assets\DLC\UI_bc1\LeaderHead\TradeLogic.lua.' }
-    if(!(Test-LEKPath $diploTrade)){ throw 'EUI diplotrade.lua not found at Assets\DLC\UI_bc1\bugfixes\diplotrade.lua.' }
+    if(!$euiTrade){ throw 'EUI trade context not found. Expected TradeLogic.lua with LeaderMessageHandler and a DiploTrade.lua that registers it.' }
+    W ('EUI trade owner: '+$diploTrade) Green
 
     $old=@()
     foreach($p in @($inGame,$leader,$tradeLogic,$diploTrade)){
@@ -63,7 +91,7 @@ LuaEvents.LEKFairTradesAIOffer.Add(function(iPlayer, szMessage)
 end)
 '@
     Set-LEKMarkedBlock $diploTrade '-- LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_BEGIN' '-- LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_END' $offerBridgeBody
-    W 'Installed direct EUI AI-offer bridge in bugfixes\diplotrade.lua.' Green
+    W ('Installed direct EUI AI-offer bridge in '+$diploTrade+'.') Green
 
     # Older EUI variants can contain an explicit luxury-offer suppression
     # branch. Keep the existing best-effort message-scoped compatibility patch.

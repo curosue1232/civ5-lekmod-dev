@@ -3,6 +3,19 @@ $ErrorActionPreference='Stop'
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'LekTools.ps1')
 function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -ForegroundColor $c }
 
+function Get-FairEUITradeFiles([string]$Civ){
+    $base=Join-LEKPath $Civ 'Assets\DLC\UI_bc1'
+    if(!(Test-LEKPath $base -Container)){ return $null }
+    $tradeLogic=Get-ChildItem -LiteralPath $base -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ieq 'TradeLogic.lua' -and (Test-LEKContains $_.FullName 'function LeaderMessageHandler') } |
+        Select-Object -ExpandProperty FullName -First 1
+    $owner=Get-ChildItem -LiteralPath $base -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ieq 'DiploTrade.lua' -and (Test-LEKContains $_.FullName 'Events.AILeaderMessage.Add( LeaderMessageHandler') } |
+        Select-Object -ExpandProperty FullName -First 1
+    if(!$tradeLogic -or !$owner){ return $null }
+    return [pscustomobject]@{ TradeLogic=$tradeLogic; Owner=$owner }
+}
+
 try {
     W '============================================================' Cyan
     W ' LEK FAIR TRADES v1.1.5 EUI DIRECT OFFER BRIDGE VERIFY' Cyan
@@ -16,8 +29,9 @@ try {
     $lua=Join-LEKPath $lekUI 'LEKFairTrades.lua'
     $xml=Join-LEKPath $lekUI 'LEKFairTrades.xml'
     $leader=Get-LEKLeaderRoot $civ
-    $tradeLogic=Join-LEKPath $civ 'Assets\DLC\UI_bc1\LeaderHead\TradeLogic.lua'
-    $diploTrade=Join-LEKPath $civ 'Assets\DLC\UI_bc1\bugfixes\diplotrade.lua'
+    $euiTrade=Get-FairEUITradeFiles $civ
+    $tradeLogic=if($euiTrade){$euiTrade.TradeLogic}else{$null}
+    $diploTrade=if($euiTrade){$euiTrade.Owner}else{$null}
     $good=$true
     $failed=New-Object System.Collections.Generic.List[string]
 
@@ -33,6 +47,7 @@ try {
     Check 'runtime XML present' (Test-LEKPath $xml)
     Check 'EUI TradeLogic present' (Test-LEKPath $tradeLogic)
     Check 'EUI diplotrade present' (Test-LEKPath $diploTrade)
+    Check 'EUI diplotrade owns LeaderMessageHandler registration' ((Test-LEKPath $diploTrade) -and (Test-LEKContains $diploTrade 'Events.AILeaderMessage.Add( LeaderMessageHandler'))
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)

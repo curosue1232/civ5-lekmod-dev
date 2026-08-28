@@ -6,7 +6,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.10 CANDIDATE ENGINE INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.1.0 SIMPLE NATIVE INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -47,7 +47,7 @@ try {
     Set-LEKMarkedBlock $inGame '-- LEK_EXT_FAIR_TRADES_LOADER_BEGIN' '-- LEK_EXT_FAIR_TRADES_LOADER_END' 'ContextPtr:LoadNewContext("LEKFairTrades")'
 
     # EUI normally discards AI luxury offers. Keep that behavior for ordinary AI
-    # messages, but allow the one Fair Trades offer identified by its unique message.
+    # messages, but allow the Fair Trades offer identified by its unique message.
     $bridgeBegin='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN'
     $bridgeEnd='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_END'
     $tl=[IO.File]::ReadAllText($tradeLogic)
@@ -70,8 +70,8 @@ try {
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.0.10 CANDIDATE ENGINE INSTALLED.' Green
-    W 'Multi-pair luxury search and lazy native pricing are active; the proven EUI bridge is unchanged.' Green
+    W 'FAIR TRADES v1.1.0 SIMPLE NATIVE INSTALLED.' Green
+    W 'The runtime now seeds luxury trades and lets Civ V native helpers build the price.' Green
     exit 0
 } catch {
     W ''

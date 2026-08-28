@@ -10,74 +10,87 @@ try {
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
     if(!$civ){ throw 'Civilization V was not found.' }
+
     $lekUI=Join-LEKPath $civ 'Assets\DLC\LEKMOD_V30.7\UI'
     $inGame=Join-LEKPath $lekUI 'InGame.lua'
     $lua=Join-LEKPath $lekUI 'LEKFairTrades.lua'
     $xml=Join-LEKPath $lekUI 'LEKFairTrades.xml'
     $leader=Get-LEKLeaderRoot $civ
     $good=$true
+    $failed=New-Object System.Collections.Generic.List[string]
 
-    $checks=@(
-        @('stable loader begin', (Test-LEKContains $inGame '-- LEK_EXT_FAIR_TRADES_LOADER_BEGIN')),
-        @('stable loader target', (Test-LEKContains $inGame 'ContextPtr:LoadNewContext("LEKFairTrades")')),
-        @('stable loader end', (Test-LEKContains $inGame '-- LEK_EXT_FAIR_TRADES_LOADER_END')),
-        @('stable runtime Lua', (Test-LEKPath $lua)),
-        @('stable runtime XML', (Test-LEKPath $xml))
-    )
-    foreach($c in $checks){ if($c[1]){W ('PASS  '+$c[0]) Green}else{W ('FAIL  '+$c[0]) Red;$good=$false} }
+    function Check([string]$Label,[bool]$Ok){
+        if($Ok){ W ('PASS  '+$Label) Green }
+        else{ W ('FAIL  '+$Label) Red; $script:good=$false; [void]$failed.Add($Label) }
+    }
+
+    Check 'stable loader begin' (Test-LEKContains $inGame '-- LEK_EXT_FAIR_TRADES_LOADER_BEGIN')
+    Check 'stable loader target' (Test-LEKContains $inGame 'ContextPtr:LoadNewContext("LEKFairTrades")')
+    Check 'stable loader end' (Test-LEKContains $inGame '-- LEK_EXT_FAIR_TRADES_LOADER_END')
+    Check 'stable runtime Lua' (Test-LEKPath $lua)
+    Check 'stable runtime XML' (Test-LEKPath $xml)
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        foreach($c in @(
-            @('runtime version 105', $t.Contains('local RUNTIME_VERSION = 105')),
-            @('inventory-first luxury seed fix', $t.Contains('-- LEK_FAIR_TRADES_INVENTORY_SEED_FIX_V105')),
-            @('transient ready-signal marker', $t.Contains('-- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V105_BEGIN')),
-            @('runtime context hidden', $t.Contains('ContextPtr:SetHide(true)')),
-            @('native what-will-AI-give engine', $t.Contains('UI.DoWhatWillAIGive()')),
-            @('native what-does-AI-want engine', $t.Contains('UI.DoWhatDoesAIWant()')),
-            @('hard 8-call helper budget', $t.Contains('MAX_NATIVE_HELPER_CALLS_PER_TURN = 8')),
-            @('human fairness gate', $t.Contains('if aiGives < humanGives then return false, "HUMAN_FAIRNESS_GATE" end')),
-            @('strategics rejected', $t.Contains('UNSUPPORTED_OR_STRATEGIC_ITEM')),
-            @('turn-start event hook', $t.Contains('Events.ActivePlayerTurnStart.Add(OnTurnStart)')),
-            @('turn-end retry cleanup', $t.Contains('Events.ActivePlayerTurnEnd.Add(OnTurnEnd)')),
-            @('transient GameDataDirty add', $t.Contains('Events.SerialEventGameDataDirty.Add(OnTurnReadySignal)')),
-            @('transient GameDataDirty remove', $t.Contains('Events.SerialEventGameDataDirty.Remove(OnTurnReadySignal)')),
-            @('rolling scan trail', $t.Contains('OfferScanTrail')),
-            @('seed inventory IDs diagnostics', $t.Contains('_HumanLuxIDs') -and $t.Contains('_AILuxIDs')),
-            @('no executable SetUpdate', -not [regex]::IsMatch($t, '(?m)^[ \t]*ContextPtr:SetUpdate[ \t]*\(')),
-            @('exactly one transient dirty add', ([regex]::Matches($t,'(?m)^[ \t]*Events\.SerialEventGameDataDirty\.Add[ \t]*\(').Count -eq 1)),
-            @('exactly one transient dirty remove', ([regex]::Matches($t,'(?m)^[ \t]*Events\.SerialEventGameDataDirty\.Remove[ \t]*\(').Count -eq 1)),
-            @('no old GetTotalValue loop', -not $t.Contains('GetTotalValueToMeNormal'))
-        )){
-            if($c[1]){W ('PASS  '+$c[0]) Green}else{W ('FAIL  '+$c[0]) Red;$good=$false}
-        }
+        Check 'runtime version 105' $t.Contains('local RUNTIME_VERSION = 105')
+        Check 'inventory-first luxury seed fix' $t.Contains('-- LEK_FAIR_TRADES_INVENTORY_SEED_FIX_V105')
+        Check 'transient ready-signal marker' $t.Contains('-- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V105_BEGIN')
+        Check 'runtime context hidden' $t.Contains('ContextPtr:SetHide(true)')
+        Check 'native what-will-AI-give engine' $t.Contains('UI.DoWhatWillAIGive()')
+        Check 'native what-does-AI-want engine' $t.Contains('UI.DoWhatDoesAIWant()')
+        Check 'hard 8-call helper budget' $t.Contains('MAX_NATIVE_HELPER_CALLS_PER_TURN = 8')
+        Check 'human fairness gate' $t.Contains('if aiGives < humanGives then return false, "HUMAN_FAIRNESS_GATE" end')
+        Check 'strategics rejected' $t.Contains('UNSUPPORTED_OR_STRATEGIC_ITEM')
+        Check 'turn-start event hook' $t.Contains('Events.ActivePlayerTurnStart.Add(OnTurnStart)')
+        Check 'turn-end retry cleanup' $t.Contains('Events.ActivePlayerTurnEnd.Add(OnTurnEnd)')
+        Check 'transient GameDataDirty add' $t.Contains('Events.SerialEventGameDataDirty.Add(OnTurnReadySignal)')
+        Check 'transient GameDataDirty remove' $t.Contains('Events.SerialEventGameDataDirty.Remove(OnTurnReadySignal)')
+        Check 'rolling scan trail' $t.Contains('OfferScanTrail')
+        Check 'seed inventory IDs diagnostics' ($t.Contains('_HumanLuxIDs') -and $t.Contains('_AILuxIDs'))
+        Check 'no executable SetUpdate' (-not [regex]::IsMatch($t, '(?m)^[ \t]*ContextPtr:SetUpdate[ \t]*\('))
+        Check 'exactly one transient dirty add' ([regex]::Matches($t,'(?m)^[ \t]*Events\.SerialEventGameDataDirty\.Add[ \t]*\(').Count -eq 1)
+        Check 'exactly one transient dirty remove' ([regex]::Matches($t,'(?m)^[ \t]*Events\.SerialEventGameDataDirty\.Remove[ \t]*\(').Count -eq 1)
+        Check 'no old GetTotalValue loop' (-not $t.Contains('GetTotalValueToMeNormal'))
 
+        # Only reject an EXECUTABLE Possible(...) call inside SpareLuxuries.
+        # v1.0.5 intentionally mentions Possible() in comments explaining why the
+        # legality check moved into RunNativeSeed; comments must not fail verify.
         $spare=[regex]::Match($t,'(?s)local function SpareLuxuries\(.*?local function SnapshotDeal').Value
-        if($spare -and -not $spare.Contains('Possible(')){ W 'PASS  no premature Possible() check in luxury inventory discovery' Green }
-        else{ W 'FAIL  SpareLuxuries still performs premature Possible() validation' Red; $good=$false }
+        $prematurePossible=$false
+        if($spare){
+            $prematurePossible=[regex]::IsMatch($spare,'(?m)^[ \t]*(?!--).*\bPossible[ \t]*\(')
+        }
+        Check 'no premature executable Possible() check in luxury inventory discovery' ($spare -and -not $prematurePossible)
     }
 
     if(Test-LEKPath $xml){
         $xt=[IO.File]::ReadAllText($xml)
-        if($xt -match 'Hidden="1"'){ W 'PASS  event-driven Fair Trades context is hidden' Green }
-        else{ W 'FAIL  Fair Trades XML context should be hidden in v1.0.5' Red; $good=$false }
+        Check 'event-driven Fair Trades context is hidden' ($xt -match 'Hidden="1"')
     }
 
     if(Test-LEKPath $leader){
         $lt=[IO.File]::ReadAllText($leader)
-        if($lt.Contains('LEK_EXT_FAIR_TRADES_NATIVE_BRIDGE_BEGIN')){ W 'FAIL  v1.0.x should not patch EUI LeaderHeadRoot.lua' Red; $good=$false }
-        else{ W 'PASS  EUI LeaderHeadRoot.lua left unpatched' Green }
-        if($lt -match 'LEK_MP_FAIR_AI_TRADES_'){ W 'FAIL  old Fair AI Trades EUI marker remains' Red; $good=$false }
-        else{ W 'PASS  no old Fair AI Trades EUI markers' Green }
+        Check 'EUI LeaderHeadRoot.lua left unpatched' (-not $lt.Contains('LEK_EXT_FAIR_TRADES_NATIVE_BRIDGE_BEGIN'))
+        Check 'no old Fair AI Trades EUI markers' (-not ($lt -match 'LEK_MP_FAIR_AI_TRADES_'))
     }
 
-    $igt=[IO.File]::ReadAllText($inGame)
-    if($igt -match 'LEK_MP_FAIR_AI_TRADES_'){ W 'FAIL  old Fair AI Trades InGame marker remains' Red; $good=$false }
-    else{ W 'PASS  no old Fair AI Trades InGame markers' Green }
+    if(Test-LEKPath $inGame){
+        $igt=[IO.File]::ReadAllText($inGame)
+        Check 'no old Fair AI Trades InGame markers' (-not ($igt -match 'LEK_MP_FAIR_AI_TRADES_'))
+    }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.0.5 VERIFIED.' Green; exit 0 }
-    W 'VERIFY FOUND A PROBLEM.' Red; exit 1
+    if($good){
+        W 'FAIR TRADES v1.0.5 VERIFIED.' Green
+        exit 0
+    }
+
+    W 'VERIFY FOUND A PROBLEM.' Red
+    if($failed.Count -gt 0){
+        W 'Failed checks:' Red
+        foreach($f in $failed){ W ('  - '+$f) Red }
+    }
+    exit 1
 } catch {
     W ('VERIFY ERROR: '+$_.Exception.Message) Red
     if($_.InvocationInfo -and $_.InvocationInfo.PositionMessage){ W $_.InvocationInfo.PositionMessage DarkGray }

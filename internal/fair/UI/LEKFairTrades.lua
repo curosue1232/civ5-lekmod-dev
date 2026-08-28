@@ -1,4 +1,4 @@
--- LEKMOD 30.7 Fair Trades v1.0.4
+-- LEKMOD 30.7 Fair Trades v1.0.5
 -- Clean extension runtime for the frozen LEK Core v1.3 stack.
 --
 -- Architecture:
@@ -14,14 +14,14 @@
 --   * Final simple-value gate guarantees AI-gives >= human-gives.
 --   * Relationship affects proactive frequency, not the AI's native price.
 
-print("LEK Fair Trades v1.0.4: loading")
--- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V104
+print("LEK Fair Trades v1.0.5: loading")
+-- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V105
 -- Event-driven runtime. The context can remain hidden because Civ V still sends
--- registered events to it. No per-frame update handler is used in v1.0.4.
+-- registered events to it. No per-frame update handler is used in v1.0.5.
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
-local RUNTIME_VERSION = 104
+local RUNTIME_VERSION = 105
 local STATE_SCHEMA_VERSION = 1
 local MAX_NATIVE_HELPER_CALLS_PER_TURN = 8
 local MAX_LUXURY_SEEDS_PER_SIDE = 2
@@ -52,6 +52,21 @@ end)
 local function StateSet(key, value)
     if STATE_DB == nil then return end
     pcall(function() STATE_DB.SetValue(key, value) end)
+end
+
+local g_scanTrail = {}
+
+local function SetScanReason(reason)
+    StateSet("OfferScanReason", reason)
+    local turn = -1
+    local human = -1
+    pcall(function() turn = Game.GetGameTurn() end)
+    pcall(function() human = Game.GetActivePlayer() end)
+    table.insert(g_scanTrail, tostring(turn) .. ":" .. tostring(human) .. ":" .. tostring(reason))
+    while #g_scanTrail > 16 do
+        table.remove(g_scanTrail, 1)
+    end
+    StateSet("OfferScanTrail", table.concat(g_scanTrail, " | "))
 end
 
 local function DealDuration()
@@ -120,9 +135,16 @@ end
 local function RelationshipOfferDue(aiID, humanID, turn)
     local interval, approach = RelationshipInterval(aiID, humanID)
     StateSet("AI_" .. tostring(aiID) .. "_Approach", ApproachName(approach))
-    if interval == nil then return false end
+    if interval == nil then
+        StateSet("AI_" .. tostring(aiID) .. "_RelationshipInterval", "BLOCKED")
+        StateSet("AI_" .. tostring(aiID) .. "_RelationshipDue", 0)
+        return false
+    end
+    StateSet("AI_" .. tostring(aiID) .. "_RelationshipInterval", interval)
     local offset = HashString(tostring(aiID) .. "|" .. tostring(humanID) .. "|REL") % interval
-    return ((turn + offset) % interval) == 0
+    local due = ((turn + offset) % interval) == 0
+    StateSet("AI_" .. tostring(aiID) .. "_RelationshipDue", due and 1 or 0)
+    return due
 end
 
 local function CanAITradeWithHuman(aiID, humanID)
@@ -156,19 +178,25 @@ local function Possible(deal, fromID, toID, itemType, data1, data2)
     return ok and v == true
 end
 
+-- LEK_FAIR_TRADES_INVENTORY_SEED_FIX_V105
+-- Inventory discovery must not ask IsPossibleToTradeItem before the native
+-- scratch deal has been initialized for this AI/human pair. v1.0.4 did that
+-- here, which could make every visible duplicate luxury disappear from the
+-- seed list. RunNativeSeed performs the authoritative Possible() check after
+-- DoTradeScreenOpened + OnHumanOpenedTradeScreen + SetFrom/SetTo.
 local function SpareLuxuries(playerID, otherID)
     local p = Players[playerID]
     local other = Players[otherID]
     local out = {}
     if p == nil or other == nil then return out end
-    local deal = UI.GetScratchDeal()
     for res in GameInfo.Resources() do
         local rid = res.ID
         if IsLuxury(rid) then
             local ours = p:GetNumResourceAvailable(rid, true) or 0
             local theirs = other:GetNumResourceAvailable(rid, true) or 0
-            if ours > 1 and theirs <= 0
-                and Possible(deal, playerID, otherID, TradeableItems.TRADE_ITEM_RESOURCES, rid, 1) then
+            -- Never seed a last copy, and do not seed a luxury the recipient
+            -- already has. Trade legality is checked later in initialized context.
+            if ours > 1 and theirs <= 0 then
                 table.insert(out, rid)
             end
         end
@@ -431,6 +459,8 @@ local function TryAI(aiID, humanID, turn)
     local aiLux = SpareLuxuries(aiID, humanID)
     StateSet("AI_" .. tostring(aiID) .. "_HumanLuxCount", #humanLux)
     StateSet("AI_" .. tostring(aiID) .. "_AILuxCount", #aiLux)
+    StateSet("AI_" .. tostring(aiID) .. "_HumanLuxIDs", table.concat(humanLux, ","))
+    StateSet("AI_" .. tostring(aiID) .. "_AILuxIDs", table.concat(aiLux, ","))
 
     local seedOffset = HashString(tostring(turn) .. "|" .. tostring(aiID) .. "|SEED")
     local attempts = 0
@@ -465,26 +495,26 @@ end
 
 local function ScanForOffer()
     if not Game.IsNetworkMultiPlayer() then
-        StateSet("OfferScanReason", "NOT_NETWORK_MULTIPLAYER")
+        SetScanReason("NOT_NETWORK_MULTIPLAYER")
         return
     end
     if g_pendingOffer ~= nil then
-        StateSet("OfferScanReason", "OFFER_ALREADY_PENDING")
+        SetScanReason("OFFER_ALREADY_PENDING")
         return
     end
 
     local humanID = Game.GetActivePlayer()
     if not IsLivingHumanMajor(humanID) then
-        StateSet("OfferScanReason", "ACTIVE_PLAYER_NOT_HUMAN_MAJOR")
+        SetScanReason("ACTIVE_PLAYER_NOT_HUMAN_MAJOR")
         return
     end
     local human = Players[humanID]
     if human == nil or not human:IsTurnActive() then
-        StateSet("OfferScanReason", "TURN_START_NOT_ACTIVE")
+        SetScanReason("TURN_START_NOT_ACTIVE")
         return
     end
     if Game.IsProcessingMessages ~= nil and Game.IsProcessingMessages() then
-        StateSet("OfferScanReason", "TURN_START_MESSAGE_QUEUE_BUSY_READY_SIGNAL_ARMED")
+        SetScanReason("TURN_START_MESSAGE_QUEUE_BUSY_READY_SIGNAL_ARMED")
         StateSet("OfferRetryHeartbeat", "READY_SIGNAL_ARMED")
         g_retryArmed = true
         g_retryTurn = Game.GetGameTurn()
@@ -495,14 +525,14 @@ local function ScanForOffer()
     if UI.GetLeaderHeadRootUp ~= nil then
         local ok, up = pcall(function() return UI.GetLeaderHeadRootUp() end)
         if ok and up then
-            StateSet("OfferScanReason", "LEADER_SCREEN_ALREADY_OPEN")
+            SetScanReason("LEADER_SCREEN_ALREADY_OPEN")
             return
         end
     end
 
     local turn = Game.GetGameTurn()
     if turn == g_lastScanTurn and humanID == g_lastScanHuman then
-        StateSet("OfferScanReason", "ALREADY_SCANNED_THIS_TURN")
+        SetScanReason("ALREADY_SCANNED_THIS_TURN")
         return
     end
     g_lastScanTurn = turn
@@ -515,36 +545,41 @@ local function ScanForOffer()
     StateSet("NativeHelperBudget", MAX_NATIVE_HELPER_CALLS_PER_TURN)
 
     if turn - g_lastShownTurn < MIN_TURNS_BETWEEN_LOCAL_OFFERS then
-        StateSet("OfferScanReason", "LOCAL_OFFER_COOLDOWN")
+        SetScanReason("LOCAL_OFFER_COOLDOWN")
         return
     end
 
     local ais = EligibleAIs(humanID)
     StateSet("OfferScanEligibleAIs", #ais)
+    StateSet("OfferScanEligibleAIIDs", table.concat(ais, ","))
     if #ais == 0 then
-        StateSet("OfferScanReason", "NO_ELIGIBLE_AI")
+        SetScanReason("NO_ELIGIBLE_AI")
         return
     end
 
     local start = (HashString(tostring(turn) .. "|" .. tostring(humanID) .. "|AI") % #ais) + 1
     local due = 0
+    local dueIDs = {}
+    StateSet("OfferDueAIIDs", "")
     for n = 0, #ais - 1 do
         if g_nativeCalls >= MAX_NATIVE_HELPER_CALLS_PER_TURN then break end
         local idx = ((start - 1 + n) % #ais) + 1
         local aiID = ais[idx]
         if RelationshipOfferDue(aiID, humanID, turn) then
             due = due + 1
+            table.insert(dueIDs, aiID)
+            StateSet("OfferDueAIIDs", table.concat(dueIDs, ","))
             local offer = TryAI(aiID, humanID, turn)
             if offer ~= nil then
-                StateSet("OfferScanReason", "FAIR_NATIVE_CANDIDATE_FOUND")
+                SetScanReason("FAIR_NATIVE_CANDIDATE_FOUND")
                 StateSet("OfferNativeHelperCalls", g_nativeCalls)
                 StateSet("OfferDueAIs", due)
                 if QueueNativeOffer(offer) then
                     g_lastShownTurn = turn
-                    StateSet("OfferScanReason", "NATIVE_OFFER_SENT")
+                    SetScanReason("NATIVE_OFFER_SENT")
                     return
                 else
-                    StateSet("OfferScanReason", "CANDIDATE_UI_NOT_SAFE")
+                    SetScanReason("CANDIDATE_UI_NOT_SAFE")
                     return
                 end
             end
@@ -554,17 +589,17 @@ local function ScanForOffer()
     StateSet("OfferNativeHelperCalls", g_nativeCalls)
     StateSet("OfferDueAIs", due)
     if due == 0 then
-        StateSet("OfferScanReason", "RELATIONSHIP_SCHEDULE_NOT_DUE")
+        SetScanReason("RELATIONSHIP_SCHEDULE_NOT_DUE")
     elseif g_nativeCalls >= MAX_NATIVE_HELPER_CALLS_PER_TURN then
-        StateSet("OfferScanReason", "HELPER_BUDGET_REACHED_NO_VALID_DEAL")
+        SetScanReason("HELPER_BUDGET_REACHED_NO_VALID_DEAL")
     else
-        StateSet("OfferScanReason", "NO_NATIVE_FAIR_SIMPLE_DEAL")
+        SetScanReason("NO_NATIVE_FAIR_SIMPLE_DEAL")
     end
 end
 
--- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V104_BEGIN
+-- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V105_BEGIN
 -- ActivePlayerTurnStart can fire while the MP message queue is still busy.
--- Instead of polling per frame, v1.0.4 temporarily subscribes to
+-- Instead of polling per frame, v1.0.5 temporarily subscribes to
 -- SerialEventGameDataDirty only for that busy window. The callback performs no
 -- deal search while the queue is busy. It removes itself immediately when the
 -- queue becomes safe, or at ActivePlayerTurnEnd.
@@ -609,14 +644,14 @@ OnTurnReadySignal = function()
     end
 
     UnregisterTurnReadySignal("READY_SIGNAL_QUEUE_CLEARED")
-    StateSet("OfferScanReason", "TURN_START_MESSAGE_QUEUE_CLEARED_READY_SIGNAL")
+    SetScanReason("TURN_START_MESSAGE_QUEUE_CLEARED_READY_SIGNAL")
     ScanForOffer()
 end
 
 local function ArmTurnReadySignal()
     if not g_retryArmed or g_retryRegistered then return end
     if Events.SerialEventGameDataDirty == nil then
-        StateSet("OfferScanReason", "READY_SIGNAL_EVENT_MISSING")
+        SetScanReason("READY_SIGNAL_EVENT_MISSING")
         StateSet("OfferRetryHeartbeat", "READY_SIGNAL_EVENT_MISSING")
         g_retryArmed = false
         return
@@ -650,19 +685,20 @@ end
 if Events.ActivePlayerTurnEnd ~= nil then
     Events.ActivePlayerTurnEnd.Add(OnTurnEnd)
 end
--- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V104_END
+-- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V105_END
 
 StateSet("Loaded", 1)
 StateSet("RuntimeVersion", RUNTIME_VERSION)
 StateSet("StateSchemaVersion", STATE_SCHEMA_VERSION)
 StateSet("OfferEngine", "NATIVE_WHAT_WILL_GIVE_WHAT_DOES_WANT")
 StateSet("AllowedItems", "LUXURY_GOLD_GPT_ONLY_V1")
+StateSet("LuxurySeedDiscovery", "INVENTORY_FIRST_NATIVE_POSSIBLE_AFTER_CONTEXT_INIT_V105")
 StateSet("StrategicResources", "NEVER")
 StateSet("HumanFairness", "AI_SIMPLE_VALUE_GTE_HUMAN_SIMPLE_VALUE")
-StateSet("PerformanceModel", "ONE_TURN_SCAN_MAX_8_NATIVE_HELPERS_TRANSIENT_READY_SIGNAL")
+StateSet("PerformanceModel", "ONE_TURN_SCAN_MAX_8_NATIVE_HELPERS_TRANSIENT_READY_SIGNAL_V105")
 StateSet("NativeUIBridge", "EVENT_ONLY_NO_EUI_FILE_PATCH")
 StateSet("RelationshipModel", "LOOSER_FREQUENCY_NATIVE_PRICE")
 StateSet("StartupPopupHidden", 1)
-StateSet("RetryContext", "HIDDEN_EVENT_DRIVEN_CONTEXT_V104")
+StateSet("RetryContext", "HIDDEN_EVENT_DRIVEN_CONTEXT_V105")
 
-print("LEK Fair Trades v1.0.4: ready - native seed engine, transient turn-ready signal, max 8 helper calls/turn")
+print("LEK Fair Trades v1.0.5: ready - initialized luxury seeds, transient turn-ready signal, max 8 helper calls/turn")

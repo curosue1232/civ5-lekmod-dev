@@ -6,7 +6,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.0 SIMPLE NATIVE INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.1.1 SAFE SWAP INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -89,9 +89,9 @@ try {
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.1.0 SIMPLE NATIVE INSTALLED.' Green
+    W 'FAIR TRADES v1.1.1 SAFE SWAP INSTALLED.' Green
     if($bridgeChanged){ W 'EUI luxury-offer compatibility bridge was installed.' Green }
-    W 'The runtime seeds luxury trades and lets Civ V native helpers build the price.' Green
+    W 'Only spare luxury-for-luxury swaps are generated, and only one AI trade session may open per turn.' Green
     exit 0
 } catch {
     W ''

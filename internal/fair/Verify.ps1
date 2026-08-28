@@ -5,7 +5,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.2 VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.0.3 VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -29,14 +29,17 @@ try {
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
         foreach($c in @(
-            @('runtime version 102', $t.Contains('local RUNTIME_VERSION = 102')),
+            @('runtime version 103', $t.Contains('local RUNTIME_VERSION = 103')),
+            @('active empty retry context marker', $t.Contains('-- LEK_FAIR_TRADES_ACTIVE_RETRY_CONTEXT_V103')),
+            @('runtime context explicitly active', $t.Contains('ContextPtr:SetHide(false)')),
             @('native what-will-AI-give engine', $t.Contains('UI.DoWhatWillAIGive()')),
             @('native what-does-AI-want engine', $t.Contains('UI.DoWhatDoesAIWant()')),
             @('hard 8-call helper budget', $t.Contains('MAX_NATIVE_HELPER_CALLS_PER_TURN = 8')),
             @('human fairness gate', $t.Contains('if aiGives < humanGives then return false, "HUMAN_FAIRNESS_GATE" end')),
             @('strategics rejected', $t.Contains('UNSUPPORTED_OR_STRATEGIC_ITEM')),
             @('turn-start event hook', $t.Contains('Events.ActivePlayerTurnStart.Add(OnTurnStart)')),
-            @('bounded queue retry marker', $t.Contains('-- LEK_FAIR_TRADES_QUEUE_RETRY_V102_BEGIN')),
+            @('bounded queue retry marker', $t.Contains('-- LEK_FAIR_TRADES_QUEUE_RETRY_V103_BEGIN')),
+            @('retry update heartbeat', $t.Contains('OfferRetryHeartbeat')),
             @('defer clears itself', $t.Contains('ContextPtr:ClearUpdate()')),
             @('defer has hard timeout', $t.Contains('TURN_START_MESSAGE_QUEUE_RETRY_TIMEOUT')),
             @('no GameDataDirty scanner', -not [regex]::IsMatch($t, '(?m)^[ \t]*(Events\.)?SerialEventGameDataDirty\.(Add|Call)[ \t]*\(')),
@@ -46,22 +49,22 @@ try {
         }
 
         $setUpdateMatches=[regex]::Matches($t,'(?m)^[ \t]*ContextPtr:SetUpdate[ \t]*\(')
-        if($setUpdateMatches.Count -le 1){
-            W 'PASS  no persistent SetUpdate scanner (only bounded retry allowed)' Green
-        }else{
-            W ('FAIL  unexpected SetUpdate calls: '+$setUpdateMatches.Count) Red
-            $good=$false
-        }
+        if($setUpdateMatches.Count -le 1){ W 'PASS  no persistent SetUpdate scanner (only bounded retry allowed)' Green }
+        else{ W ('FAIL  unexpected SetUpdate calls: '+$setUpdateMatches.Count) Red; $good=$false }
+    }
+
+    if(Test-LEKPath $xml){
+        $xt=[IO.File]::ReadAllText($xml)
+        if($xt -match 'Hidden="0"'){ W 'PASS  empty Fair Trades context is active' Green }
+        else{ W 'FAIL  Fair Trades XML context is still hidden' Red; $good=$false }
     }
 
     if(Test-LEKPath $leader){
         $lt=[IO.File]::ReadAllText($leader)
-        if($lt.Contains('LEK_EXT_FAIR_TRADES_NATIVE_BRIDGE_BEGIN')){
-            W 'FAIL  v1.0.x should not patch EUI LeaderHeadRoot.lua' Red; $good=$false
-        }else{ W 'PASS  EUI LeaderHeadRoot.lua left unpatched' Green }
-        if($lt -match 'LEK_MP_FAIR_AI_TRADES_'){
-            W 'FAIL  old Fair AI Trades EUI marker remains' Red; $good=$false
-        }else{ W 'PASS  no old Fair AI Trades EUI markers' Green }
+        if($lt.Contains('LEK_EXT_FAIR_TRADES_NATIVE_BRIDGE_BEGIN')){ W 'FAIL  v1.0.x should not patch EUI LeaderHeadRoot.lua' Red; $good=$false }
+        else{ W 'PASS  EUI LeaderHeadRoot.lua left unpatched' Green }
+        if($lt -match 'LEK_MP_FAIR_AI_TRADES_'){ W 'FAIL  old Fair AI Trades EUI marker remains' Red; $good=$false }
+        else{ W 'PASS  no old Fair AI Trades EUI markers' Green }
     }
 
     $igt=[IO.File]::ReadAllText($inGame)
@@ -69,7 +72,7 @@ try {
     else{ W 'PASS  no old Fair AI Trades InGame markers' Green }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.0.2 VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.0.3 VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red; exit 1
 } catch {
     W ('VERIFY ERROR: '+$_.Exception.Message) Red

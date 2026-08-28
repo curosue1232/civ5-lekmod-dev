@@ -29,6 +29,7 @@ local function Reason(r)
 end
 
 S("RuntimePatch","V113_ONE_SESSION_NATIVE_HELPER")
+S("RuntimeHotfix","V113B_NAMED_DEAL_ITERATOR_NO_STALE_EQUALIZE")
 S("OfferEngine","ONE_AI_ONE_SESSION_NATIVE_HELPER_V113")
 S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V113")
 S("StrategicResources","NEVER")
@@ -36,7 +37,7 @@ S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
 S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
 S("TradeSessionPolicy","ONE_AI_SESSION_MAX_PER_TURN")
 S("ScratchDealPolicy","NO_SNAPSHOT_REBUILD_SHOW_NATIVE_SCRATCH_IN_PLACE")
-S("NativeHelperPolicy","HELPERS_ONLY_INSIDE_THE_ONE_SELECTED_AI_SESSION")
+S("NativeHelperPolicy","ONE_HELPER_MUTATION_PER_FRESH_SEED")
 S("CustomValueMath","NONE")
 
 local lastScanTurn=-99999
@@ -146,19 +147,21 @@ local function CloseSession(ai)
   pcall(function() Players[ai]:DoTradeScreenClosed(false) end)
 end
 
+-- BNW/EUI Deal:GetNextItem() returns:
+-- itemType, duration, finalTurn, data1, data2, data3, flag1, fromPlayer.
+-- Destructure explicitly rather than relying on table length / trailing values.
 local function Snapshot(d)
   local a={}
   d:ResetIterator()
   while true do
-    local x={d:GetNextItem()}
-    local n=#x
-    if n<1 or x[1]==nil then break end
+    local itemType,duration,finalTurn,data1,data2,data3,flag1,fromPlayer=d:GetNextItem()
+    if itemType==nil then break end
     table.insert(a,{
-      itemType=x[1],
-      duration=x[2] or 0,
-      data1=x[4] or 0,
-      data2=x[5] or 0,
-      fromPlayer=x[n]
+      itemType=itemType,
+      duration=duration or 0,
+      data1=data1 or 0,
+      data2=data2 or 0,
+      fromPlayer=fromPlayer
     })
   end
   return a
@@ -255,6 +258,8 @@ local function NativeHelper(name)
 end
 
 local function TrySeed(d,ai,h,kind,resA,resB)
+  -- Every attempt starts from a fresh known seed. A failed helper result is
+  -- discarded; we never equalize an already-mutated invalid scratch deal.
   Prep(d,h,ai)
 
   if kind=="HUMAN_SELLS" then
@@ -268,27 +273,14 @@ local function TrySeed(d,ai,h,kind,resA,resB)
   elseif kind=="SWAP" then
     if not AddLuxSeed(d,h,ai,resA) then return false,"HUMAN_SWAP_SEED_NOT_POSSIBLE" end
     if not AddLuxSeed(d,ai,h,resB) then return false,"AI_SWAP_SEED_NOT_POSSIBLE" end
-    if not NativeHelper("EQUALIZE") then
-      -- A raw 1-for-1 swap may already be usable even if equalize is unavailable.
-      S("LastNativeHelper","RAW_SWAP")
-    end
+    if not NativeHelper("EQUALIZE") then return false,"SWAP_EQUALIZE_FAILED" end
   else
     return false,"UNKNOWN_SEED_KIND"
   end
 
   local valid,shape=ValidateNativeDeal(d,ai,h)
   if valid then return true,shape end
-
-  -- One bounded fallback inside the same AI session. This never opens another
-  -- diplomacy session and never rebuilds a successful helper result.
-  if kind~="SWAP" and UI.DoEqualizeDealWithHuman then
-    S("LastNativeReject",shape)
-    if NativeHelper("EQUALIZE") then
-      valid,shape=ValidateNativeDeal(d,ai,h)
-      if valid then return true,shape end
-    end
-  end
-
+  S("LastNativeReject",shape or "UNKNOWN_NATIVE_REJECT")
   return false,shape
 end
 

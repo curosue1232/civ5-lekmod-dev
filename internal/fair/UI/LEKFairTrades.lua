@@ -1,24 +1,25 @@
--- LEKMOD 30.7 Fair Trades v1.1.3 SAFE ONE-SESSION NATIVE
--- Pick one AI without opening diplomacy, then open exactly one trade session.
--- Seed a spare luxury and let Civ V's own trade helper fill/equalize the deal.
--- If the native result is not a simple luxury/Gold/GPT deal, close silently.
+-- LEKMOD 30.7 Fair Trades v1.1.4 DIRECT NATIVE VALUE
+-- One selected AI session, no trade-helper UI calls.
+-- Exact luxury / Gold / GPT candidates are built directly in the scratch deal
+-- and accepted only when both players' native deal-value APIs accept them.
 
-print("LEK Fair Trades v1.1.3 SAFE ONE-SESSION NATIVE: loading")
+print("LEK Fair Trades v1.1.4 DIRECT NATIVE VALUE: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
-local VERSION=113
+local VERSION=114
 local DB_VERSION=1
 local MIN_OFFER_GAP=2
-local MAX_HELPER_TRIES=3
+local MAX_EVALS=8
 
--- LEK_FAIR_TRADES_ONE_SESSION_NATIVE_V113
+-- LEK_FAIR_TRADES_DIRECT_VALUE_V114
 if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
 MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION=VERSION
 
 local db=nil
 pcall(function() db=Modding.OpenUserData("LEK_FAIR_TRADES",DB_VERSION) end)
 local function S(k,v) if db then pcall(function() db.SetValue(k,v) end) end end
+
 local function Reason(r)
   S("OfferScanReason",r)
   local t,h=-1,-1
@@ -28,17 +29,16 @@ local function Reason(r)
   S("OfferScanHuman",h)
 end
 
-S("RuntimePatch","V113_ONE_SESSION_NATIVE_HELPER")
-S("RuntimeHotfix","V113B_NAMED_DEAL_ITERATOR_NO_STALE_EQUALIZE")
-S("OfferEngine","ONE_AI_ONE_SESSION_NATIVE_HELPER_V113")
-S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V113")
+S("RuntimePatch","V114_DIRECT_NATIVE_VALUE_NO_TRADE_HELPERS")
+S("OfferEngine","ONE_AI_ONE_SESSION_DIRECT_NATIVE_VALUE_V114")
+S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V114")
 S("StrategicResources","NEVER")
 S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
 S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
 S("TradeSessionPolicy","ONE_AI_SESSION_MAX_PER_TURN")
-S("ScratchDealPolicy","NO_SNAPSHOT_REBUILD_SHOW_NATIVE_SCRATCH_IN_PLACE")
-S("NativeHelperPolicy","ONE_HELPER_MUTATION_PER_FRESH_SEED")
-S("CustomValueMath","NONE")
+S("NativeHelperPolicy","NONE_NO_DOWHATWILLGIVE_NO_DOWHATWANT_NO_EQUALIZE")
+S("ScratchDealPolicy","DIRECT_BUILD_VALIDATE_SHOW_SAME_SCRATCH")
+S("NativeEvalBudget",MAX_EVALS)
 
 local lastScanTurn=-99999
 local lastScanHuman=-1
@@ -47,6 +47,7 @@ local retryArmed=false
 local retryRegistered=false
 local retryTurn=-1
 local retryHuman=-1
+local evals=0
 
 local function Duration()
   local d=Game.GetDealDuration()
@@ -108,7 +109,6 @@ local function Due(ai,h,turn)
   return ((turn+(Hash(ai.."|"..h.."|REL")%n))%n)==0
 end
 
--- Only proactive-offer luxuries that leave the seller with at least one copy.
 local function SpareLux(from,to)
   local a={}
   local p,o=Players[from],Players[to]
@@ -130,113 +130,90 @@ local function Prep(d,h,ai)
   d:SetToPlayer(ai)
 end
 
-local function PossibleLux(d,from,to,res)
+local function Possible(d,from,to,item,a,b)
   local ok,v=pcall(function()
-    return d:IsPossibleToTradeItem(from,to,TradeableItems.TRADE_ITEM_RESOURCES,res,1)
+    return d:IsPossibleToTradeItem(from,to,item,a or 0,b or 0)
   end)
   return ok and v==true
 end
 
-local function AddLuxSeed(d,from,to,res)
-  if not PossibleLux(d,from,to,res) then return false end
+local function AddLux(d,from,to,res)
+  if not res or not Luxury(res) then return false end
+  if (Players[from]:GetNumResourceAvailable(res,true) or 0)<2 then return false end
+  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_RESOURCES,res,1) then return false end
   d:AddResourceTrade(from,res,1,Duration())
   return true
 end
 
-local function CloseSession(ai)
-  pcall(function() Players[ai]:DoTradeScreenClosed(false) end)
+local function AddGold(d,from,to,amount)
+  amount=math.floor(amount or 0)
+  local p=Players[from]
+  if amount<=0 or not p or not p.GetGold or (p:GetGold() or 0)<amount then return false end
+  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD,amount,0) then return false end
+  d:AddGoldTrade(from,amount)
+  return true
 end
 
--- BNW/EUI Deal:GetNextItem() returns:
--- itemType, duration, finalTurn, data1, data2, data3, flag1, fromPlayer.
--- Destructure explicitly rather than relying on table length / trailing values.
-local function Snapshot(d)
-  local a={}
-  d:ResetIterator()
-  while true do
-    local itemType,duration,finalTurn,data1,data2,data3,flag1,fromPlayer=d:GetNextItem()
-    if itemType==nil then break end
-    table.insert(a,{
-      itemType=itemType,
-      duration=duration or 0,
-      data1=data1 or 0,
-      data2=data2 or 0,
-      fromPlayer=fromPlayer
-    })
-  end
-  return a
+local function AddGPT(d,from,to,amount)
+  amount=math.floor(amount or 0)
+  if amount<=0 then return false end
+  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD_PER_TURN,amount,0) then return false end
+  d:AddGoldPerTurnTrade(from,amount,Duration())
+  return true
 end
 
--- Validate the native helper result in place. We never rebuild it afterward.
--- Allowed:
---   * luxury <-> luxury, optionally with Gold OR GPT as a sweetener
---   * luxury <-> flat Gold
---   * luxury <-> GPT
--- No strategics, treaties, cities, third parties, or last-copy luxuries.
-local function ValidateNativeDeal(d,ai,h)
-  local items=Snapshot(d)
-  if #items==0 then return false,"EMPTY_NATIVE_DEAL" end
+local function GPTCap(id)
+  local p=Players[id]
+  if not p then return nil end
+  local cap=nil
+  if p.CalculateGoldRate then
+    local ok,v=pcall(function() return p:CalculateGoldRate() end)
+    if ok and type(v)=="number" then cap=math.floor(v) end
+  end
+  if (not cap or cap<1) and p.GetGoldPerTurn then
+    local ok,v=pcall(function() return p:GetGoldPerTurn() end)
+    if ok and type(v)=="number" then cap=math.floor(v) end
+  end
+  if cap and cap>0 then return cap end
+  return nil
+end
 
-  local luxAI,luxH=0,0
-  local goldAI,goldH=0,0
-  local gptAI,gptH=0,0
-  local other=0
-
-  for _,x in ipairs(items) do
-    if x.fromPlayer~=ai and x.fromPlayer~=h then
-      return false,"THIRD_PARTY_NATIVE_ITEM"
-    end
-
-    if x.itemType==TradeableItems.TRADE_ITEM_RESOURCES then
-      if not Luxury(x.data1) then return false,"UNSUPPORTED_NATIVE_RESOURCE" end
-      local q=math.max(1,x.data2 or 1)
-      local p=Players[x.fromPlayer]
-      if not p or (p:GetNumResourceAvailable(x.data1,true) or 0)<=q then
-        return false,"NATIVE_HELPER_USED_LAST_LUXURY"
-      end
-      if x.fromPlayer==ai then luxAI=luxAI+1 else luxH=luxH+1 end
-
-    elseif x.itemType==TradeableItems.TRADE_ITEM_GOLD then
-      local amt=math.max(0,x.data1 or 0)
-      if amt<=0 then return false,"ZERO_GOLD_NATIVE_ITEM" end
-      if x.fromPlayer==ai then goldAI=goldAI+1 else goldH=goldH+1 end
-
-    elseif x.itemType==TradeableItems.TRADE_ITEM_GOLD_PER_TURN then
-      local amt=math.max(0,x.data1 or 0)
-      if amt<=0 then return false,"ZERO_GPT_NATIVE_ITEM" end
-      if x.fromPlayer==ai then gptAI=gptAI+1 else gptH=gptH+1 end
-
-    else
-      other=other+1
+local function Eval(d,ai,h)
+  if evals>=MAX_EVALS then return nil,"NATIVE_EVAL_BUDGET" end
+  local ap,hp=Players[ai],Players[h]
+  if not ap or not hp or not ap.GetDealMyValue or not ap.GetDealTheyreValue
+     or not hp.GetDealMyValue or not hp.GetDealTheyreValue then
+    return nil,"NATIVE_VALUE_API_MISSING"
+  end
+  evals=evals+1
+  S("OfferNativeEvals",evals)
+  local v={}
+  local ok,e=pcall(function()
+    v.aiMy=ap:GetDealMyValue(d)
+    v.aiThey=ap:GetDealTheyreValue(d)
+    v.hMy=hp:GetDealMyValue(d)
+    v.hThey=hp:GetDealTheyreValue(d)
+  end)
+  if not ok then return nil,"NATIVE_VALUE_ERROR:"..tostring(e) end
+  for _,n in pairs(v) do
+    if type(n)~="number" or n<0 or n>=999999 then
+      return nil,"NATIVE_VALUE_INVALID"
     end
   end
+  return v,"OK"
+end
 
-  if other>0 then return false,"UNSUPPORTED_NATIVE_ITEM" end
-  if luxAI+luxH==0 then return false,"NO_LUXURY_IN_NATIVE_DEAL" end
-  if luxAI>1 or luxH>1 then return false,"TOO_MANY_LUXURIES" end
+local function SideMy(v,id,ai)
+  return id==ai and v.aiMy or v.hMy
+end
 
-  -- Keep offers easy to read: native result may use flat Gold OR GPT, not both.
-  local goldKinds=(goldAI+goldH>0 and 1 or 0)+(gptAI+gptH>0 and 1 or 0)
-  if goldKinds>1 then return false,"MIXED_GOLD_AND_GPT" end
-  if goldAI+goldH>1 or gptAI+gptH>1 then return false,"MULTIPLE_CURRENCY_ITEMS" end
+local function SideThey(v,id,ai)
+  return id==ai and v.aiThey or v.hThey
+end
 
-  local aiHas=luxAI+goldAI+gptAI
-  local hHas=luxH+goldH+gptH
-  if aiHas==0 or hHas==0 then return false,"ONE_SIDED_NATIVE_DEAL" end
-
-  local shape
-  if luxAI==1 and luxH==1 then
-    if goldAI+goldH+gptAI+gptH>0 then shape="LUX_SWAP_PLUS_CURRENCY"
-    else shape="LUXURY_FOR_LUXURY" end
-  elseif luxH==1 and luxAI==0 and (goldAI+gptAI)==1 and goldH+gptH==0 then
-    shape=(goldAI==1) and "HUMAN_LUX_FOR_AI_GOLD" or "HUMAN_LUX_FOR_AI_GPT"
-  elseif luxAI==1 and luxH==0 and (goldH+gptH)==1 and goldAI+gptAI==0 then
-    shape=(goldH==1) and "AI_LUX_FOR_HUMAN_GOLD" or "AI_LUX_FOR_HUMAN_GPT"
-  else
-    return false,"UNSUPPORTED_SIMPLE_SHAPE"
-  end
-
-  return true,shape
+local function NativeFair(v)
+  if not v then return false end
+  return v.aiThey>=v.aiMy and v.hThey>=v.hMy
 end
 
 local function PickRes(list,seed)
@@ -244,56 +221,147 @@ local function PickRes(list,seed)
   return list[(Hash(seed)%#list)+1]
 end
 
-local function NativeHelper(name)
-  local ok=false
-  if name=="WILL_GIVE" and UI.DoWhatWillAIGive then
-    ok=pcall(UI.DoWhatWillAIGive)
-  elseif name=="WANTS" and UI.DoWhatDoesAIWant then
-    ok=pcall(UI.DoWhatDoesAIWant)
-  elseif name=="EQUALIZE" and UI.DoEqualizeDealWithHuman then
-    ok=pcall(UI.DoEqualizeDealWithHuman)
-  end
-  S("LastNativeHelper",name)
-  return ok
-end
-
-local function TrySeed(d,ai,h,kind,resA,resB)
-  -- Every attempt starts from a fresh known seed. A failed helper result is
-  -- discarded; we never equalize an already-mutated invalid scratch deal.
+local function TrySwap(d,ai,h,hr,ar)
+  if evals+1>MAX_EVALS then return false,"NATIVE_EVAL_BUDGET" end
   Prep(d,h,ai)
-
-  if kind=="HUMAN_SELLS" then
-    if not AddLuxSeed(d,h,ai,resA) then return false,"HUMAN_LUX_SEED_NOT_POSSIBLE" end
-    if not NativeHelper("WILL_GIVE") then return false,"WHAT_WILL_AI_GIVE_FAILED" end
-
-  elseif kind=="AI_SELLS" then
-    if not AddLuxSeed(d,ai,h,resA) then return false,"AI_LUX_SEED_NOT_POSSIBLE" end
-    if not NativeHelper("WANTS") then return false,"WHAT_DOES_AI_WANT_FAILED" end
-
-  elseif kind=="SWAP" then
-    if not AddLuxSeed(d,h,ai,resA) then return false,"HUMAN_SWAP_SEED_NOT_POSSIBLE" end
-    if not AddLuxSeed(d,ai,h,resB) then return false,"AI_SWAP_SEED_NOT_POSSIBLE" end
-    if not NativeHelper("EQUALIZE") then return false,"SWAP_EQUALIZE_FAILED" end
-  else
-    return false,"UNKNOWN_SEED_KIND"
-  end
-
-  local valid,shape=ValidateNativeDeal(d,ai,h)
-  if valid then return true,shape end
-  S("LastNativeReject",shape or "UNKNOWN_NATIVE_REJECT")
-  return false,shape
+  if not AddLux(d,h,ai,hr) then return false,"HUMAN_SWAP_LUX_NOT_POSSIBLE" end
+  if not AddLux(d,ai,h,ar) then return false,"AI_SWAP_LUX_NOT_POSSIBLE" end
+  local v,why=Eval(d,ai,h)
+  if not v then return false,why end
+  if not NativeFair(v) then return false,"NATIVE_SWAP_VALUE_GATE" end
+  return true,"LUXURY_FOR_LUXURY"
 end
 
-local function SeedOrder(ai,h,turn,hl,al)
-  local a={}
-  if #hl>0 then table.insert(a,"HUMAN_SELLS") end
-  if #al>0 then table.insert(a,"AI_SELLS") end
-  if #hl>0 and #al>0 then table.insert(a,"SWAP") end
-  if #a<=1 then return a end
-  local start=(Hash(turn.."|"..h.."|"..ai.."|SEED_ORDER")%#a)+1
+local function TryCurrency(d,ai,h,seller,buyer,res,currency)
+  if evals+3>MAX_EVALS then return false,"NATIVE_EVAL_BUDGET" end
+
+  Prep(d,h,ai)
+  if not AddLux(d,seller,buyer,res) then return false,"LUXURY_NOT_POSSIBLE" end
+  local luxV,why=Eval(d,ai,h)
+  if not luxV then return false,why end
+
+  local sellerNeeds=SideMy(luxV,seller,ai)
+  local buyerMaxValue=SideThey(luxV,buyer,ai)
+  if sellerNeeds<=0 or buyerMaxValue<=0 then return false,"LUXURY_NATIVE_VALUE_ZERO" end
+
+  Prep(d,h,ai)
+  local unitAdded=false
+  if currency=="GOLD" then
+    unitAdded=AddGold(d,buyer,seller,1)
+  else
+    unitAdded=AddGPT(d,buyer,seller,1)
+  end
+  if not unitAdded then return false,"CURRENCY_UNIT_NOT_POSSIBLE_IN_SESSION" end
+
+  local unitV
+  unitV,why=Eval(d,ai,h)
+  if not unitV then return false,why end
+
+  local buyerCostPer=SideMy(unitV,buyer,ai)
+  local sellerValuePer=SideThey(unitV,seller,ai)
+  if buyerCostPer<=0 or sellerValuePer<=0 then return false,"CURRENCY_NATIVE_UNIT_ZERO" end
+
+  local minAmount=math.max(1,math.ceil(sellerNeeds/sellerValuePer))
+  local maxAmount=math.floor(buyerMaxValue/buyerCostPer)
+
+  if currency=="GOLD" then
+    local payer=Players[buyer]
+    local available=(payer and payer.GetGold and (payer:GetGold() or 0)) or 0
+    maxAmount=math.min(maxAmount,math.floor(available))
+  else
+    local cap=GPTCap(buyer)
+    if cap then maxAmount=math.min(maxAmount,cap) end
+  end
+
+  S("AI_"..ai.."_LastPriceMin",minAmount)
+  S("AI_"..ai.."_LastPriceMax",maxAmount)
+  S("AI_"..ai.."_LastPriceCurrency",currency)
+
+  if maxAmount<minAmount then return false,"NO_MUTUALLY_FAIR_CURRENCY_RANGE" end
+
+  local amount=math.floor((minAmount+maxAmount)/2)
+  if amount<minAmount then amount=minAmount end
+
+  Prep(d,h,ai)
+  if not AddLux(d,seller,buyer,res) then return false,"FINAL_LUXURY_NOT_POSSIBLE" end
+  local paid=false
+  if currency=="GOLD" then
+    paid=AddGold(d,buyer,seller,amount)
+  else
+    paid=AddGPT(d,buyer,seller,amount)
+  end
+  if not paid then return false,"FINAL_CURRENCY_NOT_POSSIBLE" end
+
+  local finalV
+  finalV,why=Eval(d,ai,h)
+  if not finalV then return false,why end
+  if not NativeFair(finalV) then return false,"FINAL_NATIVE_VALUE_GATE" end
+
+  S("AI_"..ai.."_LastPriceAmount",amount)
+
+  local shape
+  if seller==h then
+    shape=(currency=="GOLD") and "HUMAN_LUX_FOR_AI_GOLD" or "HUMAN_LUX_FOR_AI_GPT"
+  else
+    shape=(currency=="GOLD") and "AI_LUX_FOR_HUMAN_GOLD" or "AI_LUX_FOR_HUMAN_GPT"
+  end
+  return true,shape
+end
+
+local function ShapeOrder(ai,h,turn,hl,al)
+  local shapes={}
+  if #hl>0 and #al>0 then table.insert(shapes,"SWAP") end
+  if #hl>0 then
+    table.insert(shapes,"HUMAN_GOLD")
+    table.insert(shapes,"HUMAN_GPT")
+  end
+  if #al>0 then
+    table.insert(shapes,"AI_GOLD")
+    table.insert(shapes,"AI_GPT")
+  end
+  if #shapes<=1 then return shapes end
+  local start=(Hash(turn.."|"..h.."|"..ai.."|SHAPE")%#shapes)+1
   local out={}
-  for n=0,#a-1 do table.insert(out,a[((start-1+n)%#a)+1]) end
+  for n=0,#shapes-1 do
+    table.insert(out,shapes[((start-1+n)%#shapes)+1])
+  end
   return out
+end
+
+local function TryShapes(d,ai,h,turn,hl,al)
+  local shapes=ShapeOrder(ai,h,turn,hl,al)
+  local lastWhy="NO_SHAPES"
+
+  for _,shape in ipairs(shapes) do
+    local cost=(shape=="SWAP") and 1 or 3
+    if evals+cost>MAX_EVALS then break end
+
+    local ok,why=false,"UNKNOWN_SHAPE"
+    if shape=="SWAP" then
+      local hr=PickRes(hl,turn.."|"..ai.."|SWAP_H")
+      local ar=PickRes(al,turn.."|"..ai.."|SWAP_A")
+      ok,why=TrySwap(d,ai,h,hr,ar)
+    elseif shape=="HUMAN_GOLD" then
+      local r=PickRes(hl,turn.."|"..ai.."|H_GOLD")
+      ok,why=TryCurrency(d,ai,h,h,ai,r,"GOLD")
+    elseif shape=="HUMAN_GPT" then
+      local r=PickRes(hl,turn.."|"..ai.."|H_GPT")
+      ok,why=TryCurrency(d,ai,h,h,ai,r,"GPT")
+    elseif shape=="AI_GOLD" then
+      local r=PickRes(al,turn.."|"..ai.."|A_GOLD")
+      ok,why=TryCurrency(d,ai,h,ai,h,r,"GOLD")
+    elseif shape=="AI_GPT" then
+      local r=PickRes(al,turn.."|"..ai.."|A_GPT")
+      ok,why=TryCurrency(d,ai,h,ai,h,r,"GPT")
+    end
+
+    S("AI_"..ai.."_LastShape",shape)
+    S("AI_"..ai.."_LastShapeResult",why or "")
+    lastWhy=why or lastWhy
+    if ok then return true,why end
+  end
+
+  return false,lastWhy
 end
 
 local function FindOneAI(h,turn)
@@ -328,7 +396,11 @@ local function FindOneAI(h,turn)
   return nil,"NO_DUE_AI_WITH_SPARE_LUXURY"
 end
 
-local function ShowOneNativeOffer(seed,h,turn)
+local function CloseSession(ai)
+  pcall(function() Players[ai]:DoTradeScreenClosed(false) end)
+end
+
+local function ShowOneOffer(seed,h,turn)
   local ai=seed.ai
   if Game.GetActivePlayer()~=h or not Players[h]:IsTurnActive() then return false,"HUMAN_TURN_NOT_ACTIVE" end
   if Game.IsProcessingMessages and Game.IsProcessingMessages() then return false,"MESSAGE_QUEUE_BUSY" end
@@ -337,16 +409,18 @@ local function ShowOneNativeOffer(seed,h,turn)
     if ok and up then return false,"LEADER_SCREEN_ALREADY_OPEN" end
   end
 
-  -- Re-read spare lists immediately before the one session opens.
   local hl=SpareLux(h,ai)
   local al=SpareLux(ai,h)
   if #hl==0 and #al==0 then return false,"NO_LONGER_HAS_SPARE_LUXURY" end
 
   S("NativeUIHeartbeat","ONE_SESSION_OPEN_BEGIN")
+  evals=0
+  S("OfferNativeEvals",0)
+
   local opened=false
   local success=false
   local finalShape=""
-  local failWhy="NO_NATIVE_SIMPLE_DEAL"
+  local failWhy="NO_DIRECT_NATIVE_VALUE_DEAL"
 
   local ok,e=pcall(function()
     Players[ai]:DoTradeScreenOpened()
@@ -354,45 +428,17 @@ local function ShowOneNativeOffer(seed,h,turn)
     opened=true
 
     local d=UI.GetScratchDeal()
-    local order=SeedOrder(ai,h,turn,hl,al)
-    local tries=0
-
-    for _,kind in ipairs(order) do
-      if tries>=MAX_HELPER_TRIES then break end
-      tries=tries+1
-      S("NativeHelperTries",tries)
-
-      local r1,r2=nil,nil
-      if kind=="HUMAN_SELLS" then
-        r1=PickRes(hl,turn.."|"..ai.."|HS")
-      elseif kind=="AI_SELLS" then
-        r1=PickRes(al,turn.."|"..ai.."|AS")
-      else
-        r1=PickRes(hl,turn.."|"..ai.."|SH")
-        r2=PickRes(al,turn.."|"..ai.."|SA")
-      end
-
-      local valid,why=TrySeed(d,ai,h,kind,r1,r2)
-      S("AI_"..ai.."_LastSeedKind",kind)
-      S("AI_"..ai.."_LastSeedResult",why or "")
-      failWhy=why or failWhy
-
-      if valid then
-        success=true
-        finalShape=why or "NATIVE_SIMPLE_DEAL"
-        break
-      end
+    success,finalShape=TryShapes(d,ai,h,turn,hl,al)
+    if not success then
+      failWhy=finalShape or failWhy
+      return
     end
-
-    if not success then return end
 
     S("LastShownAI",ai)
     S("LastShownTurn",Game.GetGameTurn())
     S("LastShownShape",finalShape)
-    S("NativeUIHeartbeat","ONE_SESSION_NATIVE_SCRATCH_READY")
+    S("NativeUIHeartbeat","ONE_SESSION_DIRECT_SCRATCH_READY")
 
-    -- Important: show the exact scratch deal the native helper produced.
-    -- Do not snapshot/rebuild it; that was the source of stale/mismatched UI.
     Events.AILeaderMessage(
       ai,
       DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER,
@@ -411,7 +457,7 @@ local function ShowOneNativeOffer(seed,h,turn)
   if not success then
     S("LastNativeReject",failWhy)
     if opened then CloseSession(ai) end
-    S("NativeUIHeartbeat","ONE_SESSION_CLOSED_NO_SIMPLE_DEAL")
+    S("NativeUIHeartbeat","ONE_SESSION_CLOSED_NO_DIRECT_DEAL")
     return false,failWhy
   end
 
@@ -421,9 +467,11 @@ end
 
 local function Scan()
   if not Game.IsNetworkMultiPlayer() then Reason("NOT_NETWORK_MULTIPLAYER"); return end
+
   local h=Game.GetActivePlayer()
   if not HumanMajor(h) then Reason("ACTIVE_PLAYER_NOT_HUMAN_MAJOR"); return end
   if not Players[h]:IsTurnActive() then Reason("TURN_START_NOT_ACTIVE"); return end
+
   if Game.IsProcessingMessages and Game.IsProcessingMessages() then
     Reason("TURN_START_MESSAGE_QUEUE_BUSY_READY_SIGNAL_ARMED")
     retryArmed=true
@@ -431,6 +479,7 @@ local function Scan()
     retryHuman=h
     return
   end
+
   if UI.GetLeaderHeadRootUp then
     local ok,up=pcall(UI.GetLeaderHeadRootUp)
     if ok and up then Reason("LEADER_SCREEN_ALREADY_OPEN"); return end
@@ -439,21 +488,19 @@ local function Scan()
   local turn=Game.GetGameTurn()
   if turn==lastScanTurn and h==lastScanHuman then Reason("ALREADY_SCANNED_THIS_TURN"); return end
   lastScanTurn,lastScanHuman=turn,h
+
   if turn-lastShownTurn<MIN_OFFER_GAP then Reason("LOCAL_OFFER_COOLDOWN"); return end
 
-  S("NativeHelperTries",0)
   local seed,why=FindOneAI(h,turn)
   if not seed then Reason(why); return end
 
-  -- Exactly one AI session is opened. If its native helper cannot produce an
-  -- allowed simple deal, stop for this turn instead of touching another AI.
-  local shown,showWhy=ShowOneNativeOffer(seed,h,turn)
+  local shown,showWhy=ShowOneOffer(seed,h,turn)
   if shown then
     lastShownTurn=turn
-    Reason("DIRECT_ONE_SESSION_NATIVE_OFFER_SENT")
+    Reason("DIRECT_NATIVE_VALUE_OFFER_SENT")
   else
     S("LastShowReject",showWhy or "")
-    Reason("ONE_SELECTED_AI_NO_SIMPLE_NATIVE_DEAL")
+    Reason("ONE_SELECTED_AI_NO_DIRECT_NATIVE_VALUE_DEAL")
   end
 end
 
@@ -481,7 +528,11 @@ local function Start()
   retryTurn,retryHuman=-1,-1
   Scan()
   if retryArmed then
-    if not Events.SerialEventGameDataDirty then Reason("READY_SIGNAL_EVENT_MISSING"); retryArmed=false; return end
+    if not Events.SerialEventGameDataDirty then
+      Reason("READY_SIGNAL_EVENT_MISSING")
+      retryArmed=false
+      return
+    end
     Events.SerialEventGameDataDirty.Add(Ready)
     retryRegistered=true
     S("OfferRetryHeartbeat","READY_SIGNAL_REGISTERED")
@@ -498,6 +549,6 @@ if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
 S("Loaded",1)
 S("RuntimeVersion",VERSION)
 S("StateSchemaVersion",DB_VERSION)
-S("PerformanceModel","ONE_AI_SESSION_MAX_THREE_NATIVE_HELPER_TRIES_NO_CUSTOM_VALUE_LOOPS")
+S("PerformanceModel","ONE_AI_SESSION_MAX_8_NATIVE_VALUE_CALLS_ZERO_TRADE_HELPER_CALLS")
 S("RelationshipModel","GUARDED_5_NEUTRAL_3_FRIENDLY_AFRAID_2")
-print("LEK Fair Trades v1.1.3 SAFE ONE-SESSION NATIVE: ready")
+print("LEK Fair Trades v1.1.4 DIRECT NATIVE VALUE: ready")

@@ -46,19 +46,38 @@ try {
 
     Set-LEKMarkedBlock $inGame '-- LEK_EXT_FAIR_TRADES_LOADER_BEGIN' '-- LEK_EXT_FAIR_TRADES_LOADER_END' 'ContextPtr:LoadNewContext("LEKFairTrades")'
 
-    # EUI normally discards AI luxury offers. Keep that behavior for ordinary AI
-    # messages, but allow the Fair Trades offer identified by its unique message.
+    # EUI compatibility is best-effort. Some EUI builds contain an explicit
+    # AIOfferingLux suppression branch and some do not. Patch the known simple
+    # forms when present, but never abort the whole Fair Trades install merely
+    # because TradeLogic.lua has a different layout.
     $bridgeBegin='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN'
     $bridgeEnd='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_END'
+    $fairMessage='I have a trade proposal that I believe is fair to both of us.'
     $tl=[IO.File]::ReadAllText($tradeLogic)
-    if(!$tl.Contains($bridgeBegin)){
-        $pattern='(?m)^(?<indent>[ \t]*)if[ \t]+AIOfferingLux\(\)[ \t]+then[ \t]*$'
-        $m=[regex]::Match($tl,$pattern)
-        if(!$m.Success){ throw 'Expected EUI AIOfferingLux suppression branch was not found. TradeLogic was not patched.' }
-        $indent=$m.Groups['indent'].Value
-        $replacement=$indent+$bridgeBegin+"`r`n"+$indent+'if AIOfferingLux() and szLeaderMessage ~= "I have a trade proposal that I believe is fair to both of us." then'+"`r`n"+$indent+$bridgeEnd
-        $tl=[regex]::Replace($tl,$pattern,[System.Text.RegularExpressions.MatchEvaluator]{ param($x) $replacement },1)
-        Write-LEKUtf8NoBom $tradeLogic $tl
+    $bridgeChanged=$false
+
+    if($tl.Contains($bridgeBegin) -and $tl.Contains($bridgeEnd)){
+        W 'EUI Fair Trades luxury bridge already present.' Green
+    } elseif(($tl -match 'AIOfferingLux\(\)') -and $tl.Contains($fairMessage)) {
+        W 'Existing message-scoped EUI luxury handling detected; leaving it unchanged.' Green
+    } else {
+        $simplePattern='(?m)^(?<indent>[ \t]*)(?<kw>if|elseif)[ \t]+AIOfferingLux\(\)[ \t]+then(?<trail>[ \t]*(?:--[^\r\n]*)?)$'
+        $m=[regex]::Match($tl,$simplePattern)
+        if($m.Success){
+            $indent=$m.Groups['indent'].Value
+            $kw=$m.Groups['kw'].Value
+            $trail=$m.Groups['trail'].Value
+            $replacement=$indent+$bridgeBegin+"`r`n"+$indent+$kw+' AIOfferingLux() and szLeaderMessage ~= "'+$fairMessage+'" then'+$trail+"`r`n"+$indent+$bridgeEnd
+            $tl=[regex]::Replace($tl,$simplePattern,[System.Text.RegularExpressions.MatchEvaluator]{ param($x) $replacement },1)
+            Write-LEKUtf8NoBom $tradeLogic $tl
+            $bridgeChanged=$true
+            W 'Patched compatible EUI AIOfferingLux suppression branch.' Green
+        } elseif($tl -notmatch 'AIOfferingLux\(\)') {
+            W 'This EUI TradeLogic has no AIOfferingLux suppression branch; no EUI patch is needed.' DarkGray
+        } else {
+            W 'EUI uses an unfamiliar AIOfferingLux layout. Leaving TradeLogic untouched and continuing.' Yellow
+            W 'If AI-offered luxuries are later hidden, the diagnostic capture will show us exactly what needs adapting.' DarkGray
+        }
     }
 
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'UI\LEKFairTrades.lua') -Destination (Join-Path $lekUI 'LEKFairTrades.lua') -Force
@@ -71,7 +90,8 @@ try {
 
     W ''
     W 'FAIR TRADES v1.1.0 SIMPLE NATIVE INSTALLED.' Green
-    W 'The runtime now seeds luxury trades and lets Civ V native helpers build the price.' Green
+    if($bridgeChanged){ W 'EUI luxury-offer compatibility bridge was installed.' Green }
+    W 'The runtime seeds luxury trades and lets Civ V native helpers build the price.' Green
     exit 0
 } catch {
     W ''

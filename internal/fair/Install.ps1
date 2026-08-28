@@ -6,7 +6,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.7 - SAFE DIAGNOSTIC INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.0.8 INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -41,10 +41,7 @@ try {
     $backupRoot=Join-Path $Root 'local\backups\fair'
     [void](Backup-LEKFileOnce $inGame $backupRoot 'InGame.lua')
 
-    $begin='-- LEK_EXT_FAIR_TRADES_LOADER_BEGIN'
-    $end='-- LEK_EXT_FAIR_TRADES_LOADER_END'
-    Set-LEKMarkedBlock $inGame $begin $end 'ContextPtr:LoadNewContext("LEKFairTrades")'
-
+    Set-LEKMarkedBlock $inGame '-- LEK_EXT_FAIR_TRADES_LOADER_BEGIN' '-- LEK_EXT_FAIR_TRADES_LOADER_END' 'ContextPtr:LoadNewContext("LEKFairTrades")'
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'UI\LEKFairTrades.lua') -Destination (Join-Path $lekUI 'LEKFairTrades.lua') -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'UI\LEKFairTrades.xml') -Destination (Join-Path $lekUI 'LEKFairTrades.xml') -Force
 
@@ -54,9 +51,8 @@ try {
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.0.7 SAFE DIAGNOSTIC INSTALLED.' Green
-    W 'This build observes trade opportunities but DOES NOT open or hook diplomacy.' Green
-    W 'Use it to verify that normal AI greetings/warnings no longer crash.' Green
+    W 'FAIR TRADES v1.0.8 INSTALLED.' Green
+    W 'Direct native trade-offer handoff; normal greetings remain suppressed.' Green
     exit 0
 } catch {
     W ''

@@ -1,12 +1,12 @@
--- LEKMOD 30.7 Fair Trades v1.0.9
+-- LEKMOD 30.7 Fair Trades v1.0.8
 -- Silent native-value proactive trade engine for frozen LEK Core v1.3.
 -- Direct native trade-offer handoff: never opens the default leader/greeting state.
 
-print("LEK Fair Trades v1.0.9: loading")
+print("LEK Fair Trades v1.0.8: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
-local VERSION=109
+local VERSION=108
 local DB_VERSION=1
 local MAX_EVALS=8
 local MAX_SEEDS=2
@@ -19,8 +19,8 @@ local db=nil
 pcall(function() db=Modding.OpenUserData("LEK_FAIR_TRADES",DB_VERSION) end)
 local function S(k,v) if db then pcall(function() db.SetValue(k,v) end) end end
 
--- LEK_FAIR_TRADES_EUI_LUX_BRIDGE_V109
-S("RuntimePatch","V109_EUI_LUX_OFFER_BRIDGE")
+-- LEK_FAIR_TRADES_DIRECT_NATIVE_OFFER_V108
+S("RuntimePatch","V108_NATIVE_SINGLE_AI_LUX_HOTFIX")
 S("AILuxuryOfferPolicy","ALLOW_SINGLE_COPY_IF_NATIVE_LEGAL_AND_FAIR")
 S("HumanLuxuryOfferPolicy","PRESERVE_LAST_COPY")
 S("LoadSafety","WAIT_FOR_REAL_HUMAN_TURN_START")
@@ -209,7 +209,7 @@ local function AddGold(d,from,to,n)
 end
 local function AddGPT(d,from,to,n)
   n=math.floor(n or 0); if n<=0 then return false end
-  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD_PER_TURN,n+0,0) then return false end
+  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD_PER_TURN,n,0) then return false end
   d:AddGoldPerTurnTrade(from,n,Duration()); return true
 end
 local function Seed(d,ai,h,fromHuman,res)
@@ -237,7 +237,7 @@ local function PriceLux(ai,h,fromHuman,res)
   S("AI_"..ai.."_LastSeedLuxuryValueMin",need); S("AI_"..ai.."_LastSeedLuxuryValueMax",ceiling)
   if need<=0 or ceiling<need then return nil,"NO_MUTUALLY_FAIR_PRICE_WINDOW" end
 
-  local unitGPT,unitWhy=GPTValue(ai,h,payer,recv)
+  local unitGPT,unitWhy=GPTUnitValue(ai,h,payer,recv)
   if not unitGPT then why=unitWhy end
 
   local function reset()
@@ -250,7 +250,7 @@ local function PriceLux(ai,h,fromHuman,res)
   if evals<MAX_EVALS and reset() and AddGold(d,payer,recv,math.ceil(need)) then
     local o,r=Candidate(d,ai,h,label.."GOLD"); if o then return o,r else why=r end
   end
-  if unitGPT and evals<MAX_EVALS and reset() and AddGPT(d,payer,recv,math.max(1,math.ceil(need/unitGPT))) or then
+  if unitGPT and evals<MAX_EVALS and reset() and AddGPT(d,payer,recv,math.max(1,math.ceil(need/unitGPT))) then
     local o,r=Candidate(d,ai,h,label.."GPT"); if o then return o,r else why=r end
   end
   if unitGPT and evals<MAX_EVALS and reset() then
@@ -282,83 +282,125 @@ local function Rebuild(d,o)
 end
 
 local function Show(o)
-  if not o or Game.GetActivePlayer()~=o.humanID or not Players[Ëš[X[’QN’\Õ\›Xİ]™J
-H[ˆ™]\›ˆ˜[ÙH[™ˆYˆØ[YK’\Ô›ØÙ\ÜÚ[™ÓY\ÜØYÙ\È[™Ø[YK’\Ô›ØÙ\ÜÚ[™ÓY\ÜØYÙ\Ê
-H[ˆ™]\›ˆ˜[ÙH[™ˆYˆRK‘Ù]XY\’XY›Ûİ\[ˆØØ[ÚË\\Ø[
-RK‘Ù]XY\’XY›Ûİ\
-NÈYˆÚÈ[™\[ˆ™]\›ˆ˜[ÙH[™[™‚ˆÊ“˜]]™URRX\™X]‹‘T‘PÕÕQWÓÔS—Ğ‘QÒSˆŠBˆÊ“\İÚİÛRH‹Ë˜ZRQ
-NÈÊ“\İÚİÛ•\›ˆ‹Ø[YK‘Ù]Ø[YU\›Š
-JNÈÊ“\İÚİÛ”ÙYY‹ËœÙYY
-BˆKHH[œİ[YURH[[[Û˜[H\ØØ\™ÈÜ™[˜\HRH^\HÙ™™\œË‚ˆKH˜Z\ˆ˜Y\ÈX\šÜÈÛ›H]È[™XYK]˜[Y]YŞ[]XÈÙ™™\ˆÛÈH[BˆKH˜YSÙÚXÈœšYÙHØ[ˆ]\ÈÛ™HÙ™™\ˆ›İYÚÚ]İ]™KY[˜X›[™ÈÚ]\‹‚ˆX\[Ù]K“R×ÑRT—ÕQT×ĞSÕ×ÓVÓÑ‘‘T^ØZRQ[Ë˜ZRQ\›QØ[YK‘Ù]Ø[YU\›Š
-_BˆÊ“˜]]™URRX\™X]‹‘URWĞSÕ×Ñ“Q×ĞT“QQŠBˆØØ[ÚËO\Ø[
-[˜İ[ÛŠ
-Bˆ^Y\œÖÛË˜ZRQN‘Õ˜YTØÜ™Y[“Ü[™Y
+  if not o or Game.GetActivePlayer()~=o.humanID or not Players[o.humanID]:IsTurnActive() then return false end
+  if Game.IsProcessingMessages and Game.IsProcessingMessages() then return false end
+  if UI.GetLeaderHeadRootUp then local ok,up=pcall(UI.GetLeaderHeadRootUp); if ok and up then return false end end
 
-BˆRK“Û–[X[“Ü[™Y˜YTØÜ™Y[ŠË˜ZRQ
-Bˆ™XZ[
-RK‘Ù]ØÜ˜]ÚX[
+  S("NativeUIHeartbeat","DIRECT_TRADE_OPEN_BEGIN")
+  S("LastShownAI",o.aiID); S("LastShownTurn",Game.GetGameTurn()); S("LastShownSeed",o.seed)
+  local ok,e=pcall(function()
+    Players[o.aiID]:DoTradeScreenOpened()
+    UI.OnHumanOpenedTradeScreen(o.aiID)
+    Rebuild(UI.GetScratchDeal(),o)
+    S("NativeUIHeartbeat","DIRECT_SCRATCH_REBUILT")
+    Events.AILeaderMessage(o.aiID,DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER,
+      "I have a trade proposal that I believe is fair to both of us.",-1,0)
+  end)
+  if not ok then
+    S("NativeUIHeartbeat","DIRECT_TRADE_OPEN_ERROR")
+    S("NativeUIError",tostring(e))
+    pcall(function() Players[o.aiID]:DoTradeScreenClosed(false) end)
+    return false
+  end
+  S("NativeUIHeartbeat","DIRECT_TRADE_OFFER_EVENT_SENT")
+  return true
+end
 
-KÊBˆÊ“˜]]™URRX\™X]‹‘T‘PÕÔĞÔUÒÔ‘P•RSŠBˆ]™[ËRSXY\“Y\ÜØYÙJË˜ZRQ\ÕRTİ]U\\Ë‘T×ÕRWÔÕUWÕQWĞRWÓPRÑT×ÓÑ‘‘T‹ˆ’H
-]™HH˜YH›ÜÜØ[]H™[Y]™H\È˜Z\ˆÈ›İÙˆ\Ëˆ‹LK
-Bˆ[™
-BˆX\[Ù]K“R×ÑRT—ÕQT×ĞSÕ×ÓVÓÑ‘‘T[š[ˆYˆ›İÚÈ[‚ˆÊ“˜]]™URRX\™X]‹‘T‘PÕÕQWÓÔS—ÑT”“ÔˆŠBˆÊ“˜]]™URQ\œ›Üˆ‹Üİš[™ÊJJBˆØ[
-[˜İ[ÛŠ
-H^Y\œÖÛË˜ZRQN‘Õ˜YTØÜ™Y[ÛÜÙY
-˜[ÙJH[™
-Bˆ™]\›ˆ˜[ÙBˆ[™ˆÊ“˜]]™URRX\™X]‹‘URWÕQWÓÑ‘‘T—ÑU‘S•ÔÑS•ŠBˆ™]\›ˆYB™[™‚›ØØ[[˜İ[ÛˆPRJZK\›ŠBˆØØ[[SÙ™™\˜X›S^
-ZKYJKÙ™™\˜X›S^
-ZK˜[ÙJBˆÊRWÈ‹‹˜ZK‹ˆ—Ò[X[“^Ûİ[‹Ú
-NÈÊRWÈ‹‹˜ZK‹ˆ—ĞRS^Ûİ[‹Ø[
-BˆÊRWÈ‹‹˜ZK‹ˆ—Ò[X[“^QÈ‹X›K˜ÛÛ˜Ø]
-‹ŠJNÈÊRWÈ‹‹˜ZK‹ˆ—ĞRS^QÈ‹X›K˜ÛÛ˜Ø]
-[‹ŠJBˆØØ[Ù™R\Ú
-\›‹‹ˆŸ‹‹˜ZK‹ˆŸÑQQŠNÈØØ[][\ÏLÈØØ[ÚOH““×ÓVT–WÔÑQQÈ‚ˆYˆÚŒ[™Ø[Œ[™]˜[ÏPVÑUSÈ[‚ˆ][\ÏX][\ÊÌNÈØØ[ËTİØ\
-ZKÊÙ™‰HÚ
-JÌWK[ÊÙ™‰HØ[
-JÌWJNÈÚO\‚ˆYˆÈ[ˆÊRWÈ‹‹˜ZK‹ˆ—ÔÙYY][\È‹][\ÊNÈ™]\›ˆÈ[™ˆ[™ˆØØ[[˜İ[Ûˆ\İ
-œ›ÛR[X[‹JBˆØØ[[X]›Z[ŠØKPVÔÑQQÊNÈYˆOL[ˆ™]\›ˆš[[™ˆØØ[İJÙ™‰HØJJÌBˆ›ÜˆÏL‹LHÂˆYˆ]˜[ÏSPVÑUSÈ[ˆœ™XZÈ[™ˆ][\ÏX][\ÊÌNÈØØ[YJ
-İLJÚÊIHØJJÌBˆØØ[ËTšXÙS^
-ZKœ›ÛR[X[‹VÚYJNÈÚO\ÈÊRWÈ‹‹˜ZK‹ˆ—Ó\İÙYY™\İ[‹ŠBˆYˆÈ[ˆ™]\›ˆÈ[™ˆ[™ˆ[™ˆØØ[ÂˆYˆÙ™‰LOL[ˆÏ[\İ
-YK
-NÈYˆ›İÈ[ˆÏ[\İ
-˜[ÙK[
-H[™ˆ[ÙHÏ[\İ
-˜[ÙK[
-NÈYˆ›İÈ[ˆÏ[\İ
-YK
-H[™[™ˆÊRWÈ‹‹˜ZK‹ˆ—ÔÙYY][\È‹][\ÊNÈÊRWÈ‹‹˜ZK‹ˆ—Ó\İÙYY™\İ[‹ÚJNÈ™]\›ˆÂ™[™‚›ØØ[[˜İ[ÛˆØØ[Š
-BˆYˆ›İØ[YK’\Ó™]ÛÜšÓ][T^Y\Š
-H[ˆ™X\ÛÛŠ““ÕÓ‘UÓÔ’×ÓUSTVQTˆŠNÈ™]\›ˆ[™ˆØØ[QØ[YK‘Ù]Xİ]™T^Y\Š
-BˆYˆ›İ[X[“XZ›ÜŠ
-H[ˆ™X\ÛÛŠPÕU‘WÔVQT—Ó“ÕÒSPS—ÓPR“ÔˆŠNÈ™]\›ˆ[™ˆYˆ›İ^Y\œÖÚN’\Õ\›Xİ]™J
-H[ˆ™X\ÛÛŠ•T“—ÔÕT•Ó“ÕĞPÕU‘HŠNÈ™]\›ˆ[™ˆYˆØ[YK’\Ô›ØÙ\ÜÚ[™ÓY\ÜØYÙ\È[™Ø[YK’\Ô›ØÙ\ÜÚ[™ÓY\ÜØYÙ\Ê
-H[‚ˆ™X\ÛÛŠ•T“—ÔÕT•ÓQTÔĞQÑWÔUQUQWĞ•TÖWÔ‘PQWÔÒQÓSĞT“QQŠBˆ™]P\›YY]YNÈ™]U\›QØ[YK‘Ù]Ø[YU\›Š
-NÈ™]R[X[ZÈ™]TÚYÛ˜[ÏLÈ™]\›‚ˆ[™ˆYˆRK‘Ù]XY\’XY›Ûİ\[ˆØØ[ÚË\\Ø[
-RK‘Ù]XY\’XY›Ûİ\
-NÈYˆÚÈ[™\[ˆ™X\ÛÛŠ“PQT—ÔĞÔ‘QS—ĞS‘PQWÓÔSˆŠNÈ™]\›ˆ[™[™‚ˆØØ[\›QØ[YK‘Ù]Ø[YU\›Š
-BˆYˆ\›O[\İØØ[•\›ˆ[™O[\İØØ[’[X[ˆ[ˆ™X\ÛÛŠS‘PQWÔĞĞS“‘QÕT×ÕT“ˆŠNÈ™]\›ˆ[™ˆ\İØØ[•\›‹\İØØ[’[X[‹]˜[Ï]\›‹ˆÊ“Ù™™\”ØØ[•\›ˆ‹\›ŠNÈÊ“Ù™™\”ØØ[’[X[ˆ‹
-NÈÊ“˜]]™Q]˜[YÙ]‹PVÑUSÊBˆYˆ\›‹[\İÚİÛ•\›RS—ÓÑ‘‘T—ÑĞT[ˆ™X\ÛÛŠ“ĞĞSÓÑ‘‘T—ĞÓÓÓÕÓˆŠNÈ™]\›ˆ[™‚ˆØØ[Z\ÏPR\Ê
-NÈÊ“Ù™™\”ØØ[‘[YÚX›PR\È‹ØZ\ÊNÈÊ“Ù™™\”ØØ[‘[YÚX›PRRQÈ‹X›K˜ÛÛ˜Ø]
-Z\Ë‹ŠJBˆYˆØZ\ÏOL[ˆ™X\ÛÛŠ““×ÑSQÒP“WĞRHŠNÈ™]\›ˆ[™ˆØØ[İJ\Ú
-\›‹‹ˆŸ‹‹š‹ˆŸRHŠIHØZ\ÊJÌNÈØØ[YOLÈØØ[YÏ^ßBˆ›ÜˆLØZ\ËLHÂˆYˆ]˜[ÏSPVÑUSÈ[ˆœ™XZÈ[™ˆØØ[ZOXZ\ÖÊ
-İLJÛŠIHØZ\ÊJÌWBˆYˆYJZK\›ŠH[‚ˆYOYYJÌNÈX›Kš[œÙ\
-YËZJNÈÊ“Ù™™\‘YPRRQÈ‹X›K˜ÛÛ˜Ø]
-YË‹ŠJBˆØØ[ÏUPRJZK\›ŠBˆYˆÈ[‚ˆ™X\ÛÛŠ‘RT—ÔÒSS•ÓUU‘WĞĞS‘QUWÑ“ÕS‘ŠNÈÊ“Ù™™\“˜]]™Q]˜[È‹]˜[ÊNÈÊ“Ù™™\‘YPR\È‹YJBˆYˆÚİÊÊH[ˆ\İÚİÛ•\›]\›È™X\ÛÛŠ‘T‘PÕÓUU‘WÓÑ‘‘T—ÔÑS•ŠH[ÙH™X\ÛÛŠĞS‘QUWÕRWÓ“ÕÔĞQ‘HŠH[™ˆ™]\›‚ˆ[™ˆ[™ˆ[™ˆÊ“Ù™™\“˜]]™Q]˜[È‹]˜[ÊNÈÊ“Ù™™\‘YPR\È‹YJBˆYˆYOOL[ˆ™X\ÛÛŠ”‘SUSÓ”ÒTÔĞÒQSWÓ“ÕÑQHŠBˆ[ÙZYˆ]˜[ÏSPVÑUSÈ[ˆ™X\ÛÛŠ“UU‘WÑUSĞ•QÑUÔ‘PPÒQÓ“×ÕSQÑPSŠBˆ[ÙH™X\ÛÛŠ““×ÔÒSS•ÓUU‘WÑRT—ÑPSŠH[™™[™‚›ØØ[™XYB›ØØ[[˜İ[Ûˆ[œ™XYJŠBˆYˆ™]T™YÚ\İ\™Y[™]™[Ë”Ù\šX[]™[Ø[YQ]Q\H[ˆ]™[Ë”Ù\šX[]™[Ø[YQ]Q\K”™[[İ™J™XYJH[™ˆ™]T™YÚ\İ\™Y™]P\›YYY˜[ÙK˜[ÙBˆYˆˆ[ˆÊ“Ù™™\”™]RX\™X]‹ŠH[™™[™”™XYOY[˜İ[ÛŠ
-BˆYˆ›İ™]T™YÚ\İ\™Y[ˆ™]\›ˆ[™ˆ™]TÚYÛ˜[Ï\™]TÚYÛ˜[ÊÌNÈÊ“Ù™™\”™]TÚYÛ˜[È‹™]TÚYÛ˜[ÊBˆYˆ›İ™]P\›YY[ˆ[œ™XYJ”‘PQWÔÒQÓSÑTĞT“QQŠNÈ™]\›ˆ[™ˆYˆØ[YK‘Ù]Ø[YU\›Š
-_\™]U\›ˆÜˆØ[YK‘Ù]Xİ]™T^Y\Š
-_\™]R[X[ˆ[ˆ[œ™XYJ”‘PQWÔÒQÓSÕT“—ĞÒS‘ÑQŠNÈ™]\›ˆ[™ˆYˆ›İ^Y\œÖÜ™]R[X[—HÜˆ›İ^Y\œÖÜ™]R[X[—N’\Õ\›Xİ]™J
-H[ˆ[œ™XYJ”‘PQWÔÒQÓSÕT“—ÒSPÕU‘HŠNÈ™]\›ˆ[™ˆYˆØ[YK’\Ô›ØÙ\ÜÚ[™ÓY\ÜØYÙ\È[™Ø[YK’\Ô›ØÙ\ÜÚ[™ÓY\ÜØYÙ\Ê
-H[ˆÊ“Ù™™\”™]RX\™X]‹”‘PQWÔÒQÓSÔÕSĞ•TÖHŠNÈ™]\›ˆ[™ˆ[œ™XYJ”‘PQWÔÒQÓSÔUQUQWĞÓPT‘QŠNÈ™X\ÛÛŠ•T“—ÔÕT•ÓQTÔĞQÑWÔUQUQWĞÓPT‘QÔ‘PQWÔÒQÓSŠNÈØØ[Š
-B™[™›ØØ[[˜İ[Ûˆİ\
+local function TryAI(ai,h,turn)
+  local hl,al=OfferableLux(h,ai,true),OfferableLux(ai,h,false)
+  S("AI_"..ai.."_HumanLuxCount",#hl); S("AI_"..ai.."_AILuxCount",#al)
+  S("AI_"..ai.."_HumanLuxIDs",table.concat(hl,",")); S("AI_"..ai.."_AILuxIDs",table.concat(al,","))
+  local off=Hash(turn.."|"..ai.."|SEED"); local attempts=0; local why="NO_LUXURY_SEEDS"
+  if #hl>0 and #al>0 and evals<MAX_EVALS then
+    attempts=attempts+1; local o,r=Swap(ai,h,hl[(off%#hl)+1],al[(off%#al)+1]); why=r
+    if o then S("AI_"..ai.."_SeedAttempts",attempts); return o end
+  end
+  local function list(fromHuman,a)
+    local n=math.min(#a,MAX_SEEDS); if n==0 then return nil end
+    local st=(off%#a)+1
+    for k=0,n-1 do
+      if evals>=MAX_EVALS then break end
+      attempts=attempts+1; local idx=((st-1+k)%#a)+1
+      local o,r=PriceLux(ai,h,fromHuman,a[idx]); why=r; S("AI_"..ai.."_LastSeedResult",r)
+      if o then return o end
+    end
+  end
+  local o
+  if off%2==0 then o=list(true,hl); if not o then o=list(false,al) end
+  else o=list(false,al); if not o then o=list(true,hl) end end
+  S("AI_"..ai.."_SeedAttempts",attempts); S("AI_"..ai.."_LastSeedResult",why); return o
+end
 
-Bˆ[œ™XYJš[
-NÈ™]U\›‹™]R[X[‹™]TÚYÛ˜[ÏKLKLKÈØØ[Š
-BˆYˆ™]P\›YY[‚ˆYˆ›İ]™[Ë”Ù\šX[]™[Ø[YQ]Q\H[ˆ™X\ÛÛŠ”‘PQWÔÒQÓSÑU‘S•ÓRTÔÒS‘ÈŠNÈ™]P\›YYY˜[ÙNÈ™]\›ˆ[™ˆ]™[Ë”Ù\šX[]™[Ø[YQ]Q\KY
-™XYJNÈ™]T™YÚ\İ\™Y]YNÈÊ“Ù™™\”™]RX\™X]‹”‘PQWÔÒQÓSÔ‘QÒTÕT‘QŠBˆ[™™[™›ØØ[[˜İ[Ûˆš[š\Ú
+local function Scan()
+  if not Game.IsNetworkMultiPlayer() then Reason("NOT_NETWORK_MULTIPLAYER"); return end
+  local h=Game.GetActivePlayer()
+  if not HumanMajor(h) then Reason("ACTIVE_PLAYER_NOT_HUMAN_MAJOR"); return end
+  if not Players[h]:IsTurnActive() then Reason("TURN_START_NOT_ACTIVE"); return end
+  if Game.IsProcessingMessages and Game.IsProcessingMessages() then
+    Reason("TURN_START_MESSAGE_QUEUE_BUSY_READY_SIGNAL_ARMED")
+    retryArmed=true; retryTurn=Game.GetGameTurn(); retryHuman=h; retrySignals=0; return
+  end
+  if UI.GetLeaderHeadRootUp then local ok,up=pcall(UI.GetLeaderHeadRootUp); if ok and up then Reason("LEADER_SCREEN_ALREADY_OPEN"); return end end
 
-HYˆ™]T™YÚ\İ\™YÜˆ™]P\›YY[ˆ[œ™XYJ”‘PQWÔÒQÓSĞĞSÑSQÕT“—ÑS‘ŠH[™[™‘]™[ËXİ]™T^Y\•\›”İ\Y
-İ\
-BšYˆ]™[ËXİ]™T^Y\•\›‘[™[ˆ]™[ËXİ]™T^Y\•\›‘[™Y
-š[š\Ú
-H[™‚”Ê“ØYY‹JNÈÊ”[[YU™\œÚ[Ûˆ‹‘T”ÒSÓŠNÈÊ”İ]TØÚ[XU™\œÚ[Ûˆ‹—Õ‘T”ÒSÓŠB”Ê“Ù™™\‘[™Ú[™H‹”ÒSS•ÓUU‘WÔÒQWÕSPUSÓ—ĞĞS‘QUT×ÕŒLŠB”Ê[İÙY][\È‹“VT–WÑÓÓÑÔÓÓ“WÕŒLŠNÈÊ”İ˜]YÚXÔ™\Ûİ\˜Ù\È‹“‘U‘TˆŠB”Ê’[X[‘˜Z\›™\ÜÈ‹’SPS—ÓUU‘WÕVWÕSQWÑÕWÓVWÕSQWÕŒLŠB”Ê”\™›Ü›X[˜ÙS[Ù[‹“Ó‘WÕT“—ÔĞĞS—ÓPVÎÓUU‘WÑUS×ÕS”ÒQS•Ô‘PQWÔÒQÓSÕŒLŠB”Ê“˜]]™URPœšYÙH‹‘URWÕQSÑÒP×ĞSÕ×Ñ“Q×Ó“×ÑQUSÔ“ÓÕÕŒLHŠB”Ê”™[][ÛœÚ\[Ù[‹“ÓÔÑT—Ñ”‘TUQSÖWÓUU‘WÔ’PÑHŠBœš[
-“RÈ˜Z\ˆ˜Y\ÈŒKŒNˆ™XYHŠ
+  local turn=Game.GetGameTurn()
+  if turn==lastScanTurn and h==lastScanHuman then Reason("ALREADY_SCANNED_THIS_TURN"); return end
+  lastScanTurn,lastScanHuman,evals=turn,h,0
+  S("OfferScanTurn",turn); S("OfferScanHuman",h); S("NativeEvalBudget",MAX_EVALS)
+  if turn-lastShownTurn<MIN_OFFER_GAP then Reason("LOCAL_OFFER_COOLDOWN"); return end
+
+  local ais=AIs(h); S("OfferScanEligibleAIs",#ais); S("OfferScanEligibleAIIDs",table.concat(ais,","))
+  if #ais==0 then Reason("NO_ELIGIBLE_AI"); return end
+  local st=(Hash(turn.."|"..h.."|AI")%#ais)+1; local due=0; local ids={}
+  for n=0,#ais-1 do
+    if evals>=MAX_EVALS then break end
+    local ai=ais[((st-1+n)%#ais)+1]
+    if Due(ai,h,turn) then
+      due=due+1; table.insert(ids,ai); S("OfferDueAIIDs",table.concat(ids,","))
+      local o=TryAI(ai,h,turn)
+      if o then
+        Reason("FAIR_SILENT_NATIVE_CANDIDATE_FOUND"); S("OfferNativeEvals",evals); S("OfferDueAIs",due)
+        if Show(o) then lastShownTurn=turn; Reason("DIRECT_NATIVE_OFFER_SENT") else Reason("CANDIDATE_UI_NOT_SAFE") end
+        return
+      end
+    end
+  end
+  S("OfferNativeEvals",evals); S("OfferDueAIs",due)
+  if due==0 then Reason("RELATIONSHIP_SCHEDULE_NOT_DUE")
+  elseif evals>=MAX_EVALS then Reason("NATIVE_EVAL_BUDGET_REACHED_NO_VALID_DEAL")
+  else Reason("NO_SILENT_NATIVE_FAIR_DEAL") end
+end
+
+local Ready
+local function Unready(r)
+  if retryRegistered and Events.SerialEventGameDataDirty then Events.SerialEventGameDataDirty.Remove(Ready) end
+  retryRegistered,retryArmed=false,false
+  if r then S("OfferRetryHeartbeat",r) end
+end
+Ready=function()
+  if not retryRegistered then return end
+  retrySignals=retrySignals+1; S("OfferRetrySignals",retrySignals)
+  if not retryArmed then Unready("READY_SIGNAL_DISARMED"); return end
+  if Game.GetGameTurn()~=retryTurn or Game.GetActivePlayer()~=retryHuman then Unready("READY_SIGNAL_TURN_CHANGED"); return end
+  if not Players[retryHuman] or not Players[retryHuman]:IsTurnActive() then Unready("READY_SIGNAL_TURN_INACTIVE"); return end
+  if Game.IsProcessingMessages and Game.IsProcessingMessages() then S("OfferRetryHeartbeat","READY_SIGNAL_STILL_BUSY"); return end
+  Unready("READY_SIGNAL_QUEUE_CLEARED"); Reason("TURN_START_MESSAGE_QUEUE_CLEARED_READY_SIGNAL"); Scan()
+end
+local function Start()
+  Unready(nil); retryTurn,retryHuman,retrySignals=-1,-1,0; Scan()
+  if retryArmed then
+    if not Events.SerialEventGameDataDirty then Reason("READY_SIGNAL_EVENT_MISSING"); retryArmed=false; return end
+    Events.SerialEventGameDataDirty.Add(Ready); retryRegistered=true; S("OfferRetryHeartbeat","READY_SIGNAL_REGISTERED")
+  end
+end
+local function Finish() if retryRegistered or retryArmed then Unready("READY_SIGNAL_CANCELLED_TURN_END") end end
+Events.ActivePlayerTurnStart.Add(Start)
+if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
+
+S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)
+S("OfferEngine","SILENT_NATIVE_SIDE_VALUATION_CANDIDATES_V108")
+S("AllowedItems","LUXURY_GOLD_GPT_ONLY_V108"); S("StrategicResources","NEVER")
+S("HumanFairness","HUMAN_NATIVE_THEY_VALUE_GTE_MY_VALUE_V108")
+S("PerformanceModel","ONE_TURN_SCAN_MAX_8_NATIVE_EVALS_TRANSIENT_READY_SIGNAL_V108")
+S("NativeUIBridge","DIRECT_TRADE_STATE_NO_DEFAULT_ROOT_NO_DOBEGINDIPLO_V108")
+S("RelationshipModel","LOOSER_FREQUENCY_NATIVE_PRICE")
+print("LEK Fair Trades v1.0.8: ready")

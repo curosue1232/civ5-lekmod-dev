@@ -5,7 +5,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.4d DEFERRED UI VALIDATION VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.1.4e CRASH-SAFE DEFERRED UI VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -37,17 +37,18 @@ try {
         Check 'runtime version 114' $t.Contains('local VERSION=114')
         Check 'v1.1.4 direct-value marker' $t.Contains('-- LEK_FAIR_TRADES_DIRECT_VALUE_V114')
         Check 'direct-value runtime patch' $t.Contains('V114_DIRECT_NATIVE_VALUE_NO_TRADE_HELPERS')
-        Check 'v1.1.4d deferred UI hotfix' $t.Contains('V114D_DEFERRED_UI_DISPLAY_REVALIDATE')
-        Check 'search reserves display validation eval' $t.Contains('local SEARCH_EVAL_LIMIT=MAX_EVALS-1')
-        Check 'post-UI display revalidation' ($t.Contains('DisplayValidation","BOTH_FAIR') -and $t.Contains('DISPLAY_NATIVE_VALUE_GATE'))
-        Check 'post-UI error diagnostic' $t.Contains('NativeUIErrorUIOpened')
+        Check 'v1.1.4e crash-safe hotfix' $t.Contains('V114E_NO_POST_UI_NATIVE_VALUE')
+        Check 'full search eval budget restored' $t.Contains('local SEARCH_EVAL_LIMIT=MAX_EVALS')
+        Check 'no post-UI native value policy' $t.Contains('VALIDATE_BACKEND_THEN_UI_REBUILD_NO_POST_UI_NATIVE_VALUE')
+        Check 'display rebuilt without post-UI valuation' $t.Contains('DisplayValidation","REBUILT_NO_POST_UI_NATIVE_VALUE')
+        Check 'post-UI error diagnostic retained' $t.Contains('NativeUIErrorUIOpened')
         Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V114')
         Check 'currency offers both ways' $t.Contains('LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS')
         Check 'both sides preserve last copy' $t.Contains('BOTH_SIDES_PRESERVE_LAST_COPY')
         Check 'spare luxury requires two copies' $t.Contains('GetNumResourceAvailable(r.ID,true) or 0)>=2')
         Check 'flat Gold inserted directly' ($t.Contains('TRADE_ITEM_GOLD') -and $t.Contains('AddGoldTrade'))
         Check 'GPT inserted directly' ($t.Contains('TRADE_ITEM_GOLD_PER_TURN') -and $t.Contains('AddGoldPerTurnTrade'))
-        Check 'native same-side value APIs used' ($t.Contains('GetDealMyValue') -and $t.Contains('GetDealTheyreValue'))
+        Check 'native same-side value APIs used pre-UI' ($t.Contains('GetDealMyValue') -and $t.Contains('GetDealTheyreValue'))
         Check 'native fairness checks both players' $t.Contains('v.aiThey>=v.aiMy and v.hThey>=v.hMy')
         Check '8-evaluation ceiling' $t.Contains('local MAX_EVALS=8')
         Check 'human luxury for AI Gold shape' $t.Contains('HUMAN_LUX_FOR_AI_GOLD')
@@ -60,7 +61,17 @@ try {
         Check 'no native deal iterator/snapshot needed' (-not ($t.Contains('GetNextItem') -or $t.Contains('local function Snapshot')))
         Check 'one trade-session open call in runtime' ([regex]::Matches($t,'(?m)^\s*Players\[ai\]:DoTradeScreenOpened\(\)\s*$').Count -eq 1)
         Check 'one executable human-opened trade call in runtime' ([regex]::Matches($t,'(?m)^\s*UI\.OnHumanOpenedTradeScreen\(ai\)\s*$').Count -eq 1)
-        Check 'human UI opens after valid candidate marker' ($t.IndexOf('VALID_CANDIDATE_BEFORE_UI') -lt $t.IndexOf('UI.OnHumanOpenedTradeScreen(ai)'))
+        $uiIndex=$t.IndexOf('UI.OnHumanOpenedTradeScreen(ai)')
+        $validIndex=$t.IndexOf('VALID_CANDIDATE_BEFORE_UI')
+        Check 'human UI opens after valid candidate marker' ($uiIndex -gt $validIndex -and $validIndex -ge 0)
+        if($uiIndex -ge 0){
+            $afterUI=$t.Substring($uiIndex)
+            Check 'no GetDealMyValue after human UI opens' (-not $afterUI.Contains('GetDealMyValue'))
+            Check 'no GetDealTheyreValue after human UI opens' (-not $afterUI.Contains('GetDealTheyreValue'))
+        } else {
+            Check 'no GetDealMyValue after human UI opens' $false
+            Check 'no GetDealTheyreValue after human UI opens' $false
+        }
         Check 'direct scratch policy' $t.Contains('DIRECT_BUILD_VALIDATE_SHOW_SAME_SCRATCH')
         Check 'unique Fair Trades offer message' $t.Contains('I have a trade proposal that I believe is fair to both of us.')
         Check 'native AI offer state' $t.Contains('DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER')
@@ -71,8 +82,6 @@ try {
         Check 'real turn-start hook' $t.Contains('Events.ActivePlayerTurnStart.Add(Start)')
     }
 
-    # EUI layouts differ. The bridge is helpful when the known luxury
-    # suppression branch exists, but alternate EUI layouts are non-fatal.
     if(Test-LEKPath $tradeLogic){
         $tl=[IO.File]::ReadAllText($tradeLogic)
         $bridgeBegin='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN'
@@ -110,7 +119,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.1.4d DEFERRED UI VALIDATION VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.1.4e CRASH-SAFE DEFERRED UI VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

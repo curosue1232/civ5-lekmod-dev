@@ -6,7 +6,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.9 INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.0.8 EUI BRIDGE INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -47,7 +47,7 @@ try {
     Set-LEKMarkedBlock $inGame '-- LEK_EXT_FAIR_TRADES_LOADER_BEGIN' '-- LEK_EXT_FAIR_TRADES_LOADER_END' 'ContextPtr:LoadNewContext("LEKFairTrades")'
 
     # EUI normally discards AI luxury offers. Keep that behavior for ordinary AI
-    # messages, but allow the one Fair Trades offer while its runtime flag is armed.
+    # messages, but allow the one Fair Trades offer identified by its unique message.
     $bridgeBegin='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN'
     $bridgeEnd='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_END'
     $tl=[IO.File]::ReadAllText($tradeLogic)
@@ -56,7 +56,7 @@ try {
         $m=[regex]::Match($tl,$pattern)
         if(!$m.Success){ throw 'Expected EUI AIOfferingLux suppression branch was not found. TradeLogic was not patched.' }
         $indent=$m.Groups['indent'].Value
-        $replacement=$indent+$bridgeBegin+"`r`n"+$indent+'if AIOfferingLux() and not (MapModData and MapModData.LEK_FAIR_TRADES_ALLOW_LUX_OFFER) then'+"`r`n"+$indent+$bridgeEnd
+        $replacement=$indent+$bridgeBegin+"`r`n"+$indent+'if AIOfferingLux() and szLeaderMessage ~= "I have a trade proposal that I believe is fair to both of us." then'+"`r`n"+$indent+$bridgeEnd
         $tl=[regex]::Replace($tl,$pattern,[System.Text.RegularExpressions.MatchEvaluator]{ param($x) $replacement },1)
         Write-LEKUtf8NoBom $tradeLogic $tl
     }
@@ -70,8 +70,8 @@ try {
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.0.9 INSTALLED.' Green
-    W 'Validated luxury offers may pass the EUI luxury-suppression branch; ordinary AI chatter remains suppressed.' Green
+    W 'FAIR TRADES v1.0.8 EUI BRIDGE INSTALLED.' Green
+    W 'Validated Fair Trades luxury offers bypass EUI suppression; ordinary AI luxury chatter remains suppressed.' Green
     exit 0
 } catch {
     W ''

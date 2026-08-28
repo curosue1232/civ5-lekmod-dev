@@ -5,7 +5,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.2 SAFE CURRENCY VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.1.3 ONE-SESSION NATIVE VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -34,39 +34,40 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 112' $t.Contains('local VERSION=112')
-        Check 'v1.1.2 safe currency marker' $t.Contains('-- LEK_FAIR_TRADES_SAFE_CURRENCY_V112')
-        Check 'safe currency runtime patch' $t.Contains('V112_SAFE_LUX_SWAP_GOLD_GPT')
-        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V112')
+        Check 'runtime version 113' $t.Contains('local VERSION=113')
+        Check 'v1.1.3 one-session marker' $t.Contains('-- LEK_FAIR_TRADES_ONE_SESSION_NATIVE_V113')
+        Check 'one-session runtime patch' $t.Contains('V113_ONE_SESSION_NATIVE_HELPER')
+        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V113')
         Check 'currency offers both ways' $t.Contains('LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS')
         Check 'both sides preserve last copy' $t.Contains('BOTH_SIDES_PRESERVE_LAST_COPY')
-        Check 'requires two luxury copies' $t.Contains('GetNumResourceAvailable(r.ID,true) or 0)>=2')
-        Check 'flat Gold supported' ($t.Contains('TRADE_ITEM_GOLD') -and $t.Contains('AddGoldTrade'))
-        Check 'GPT supported' ($t.Contains('TRADE_ITEM_GOLD_PER_TURN') -and $t.Contains('AddGoldPerTurnTrade'))
-        Check 'human luxury for Gold shape' $t.Contains('HUMAN_LUX_GOLD')
-        Check 'human luxury for GPT shape' $t.Contains('HUMAN_LUX_GPT')
-        Check 'AI luxury for Gold shape' $t.Contains('AI_LUX_GOLD')
-        Check 'AI luxury for GPT shape' $t.Contains('AI_LUX_GPT')
-        Check 'native value calibration' ($t.Contains('GetDealMyValue') -and $t.Contains('GetDealTheyreValue'))
-        Check 'same-side seller calibration' ($t.Contains('sellerNeeds=SideMy') -and $t.Contains('sellerValuePer=SideThey'))
-        Check 'same-side buyer calibration' ($t.Contains('buyerMaxValue=SideThey') -and $t.Contains('buyerCostPer=SideMy'))
-        Check 'final native fairness gate' $t.Contains('FINAL_NATIVE_VALUE_GATE')
-        Check '6-evaluation ceiling' $t.Contains('local MAX_EVALS=6')
-        Check 'no native pricing helpers' (-not ($t.Contains('UI.DoWhatWillAIGive') -or $t.Contains('UI.DoWhatDoesAIWant') -or $t.Contains('UI.DoEqualizeDealWithHuman')))
-        Check 'no scratch snapshot iterator' (-not ($t.Contains('GetNextItem') -or $t.Contains('local function Snapshot') -or $t.Contains('local function Rebuild')))
+        Check 'spare luxury requires two copies' $t.Contains('GetNumResourceAvailable(r.ID,true) or 0)>=2')
+        Check 'last-copy helper result rejected' $t.Contains('NATIVE_HELPER_USED_LAST_LUXURY')
+        Check 'native give helper' $t.Contains('UI.DoWhatWillAIGive')
+        Check 'native want helper' $t.Contains('UI.DoWhatDoesAIWant')
+        Check 'native equalizer fallback' $t.Contains('UI.DoEqualizeDealWithHuman')
+        Check 'helpers bounded to three tries' $t.Contains('local MAX_HELPER_TRIES=3')
+        Check 'flat Gold result validation' $t.Contains('TRADE_ITEM_GOLD')
+        Check 'GPT result validation' $t.Contains('TRADE_ITEM_GOLD_PER_TURN')
+        Check 'human luxury for AI Gold shape' $t.Contains('HUMAN_LUX_FOR_AI_GOLD')
+        Check 'human luxury for AI GPT shape' $t.Contains('HUMAN_LUX_FOR_AI_GPT')
+        Check 'AI luxury for human Gold shape' $t.Contains('AI_LUX_FOR_HUMAN_GOLD')
+        Check 'AI luxury for human GPT shape' $t.Contains('AI_LUX_FOR_HUMAN_GPT')
+        Check 'no custom native value math' (-not ($t.Contains('GetDealMyValue') -or $t.Contains('GetDealTheyreValue') -or $t.Contains('MAX_EVALS')))
+        Check 'no custom currency insertion' (-not ($t.Contains('AddGoldTrade') -or $t.Contains('AddGoldPerTurnTrade')))
         Check 'one trade-session open call in runtime' ([regex]::Matches($t,'DoTradeScreenOpened\(\)').Count -eq 1)
         Check 'one human-opened trade call in runtime' ([regex]::Matches($t,'UI\.OnHumanOpenedTradeScreen').Count -eq 1)
-        Check 'display scratch built after session init' ($t.IndexOf('UI.OnHumanOpenedTradeScreen(c.ai)') -lt $t.IndexOf('local d=UI.GetScratchDeal()', $t.IndexOf('local function ShowCandidate')))
+        Check 'native scratch shown in place' $t.Contains('NO_SNAPSHOT_REBUILD_SHOW_NATIVE_SCRATCH_IN_PLACE')
         Check 'unique Fair Trades offer message' $t.Contains('I have a trade proposal that I believe is fair to both of us.')
         Check 'native AI offer state' $t.Contains('DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER')
+        Check 'no DoBeginDiploWithHuman' (-not $t.Contains('DoBeginDiploWithHuman'))
         Check 'strategics never' $t.Contains('S("StrategicResources","NEVER")')
         Check 'no SetUpdate scanner' (-not $t.Contains('ContextPtr:SetUpdate'))
         Check 'no load bootstrap event' (-not $t.Contains('SequenceGameInitComplete.Add'))
         Check 'real turn-start hook' $t.Contains('Events.ActivePlayerTurnStart.Add(Start)')
     }
 
-    # EUI layouts differ. A canonical bridge is ideal when the known suppression
-    # branch exists, but its absence is not an installation failure by itself.
+    # EUI layouts differ. The bridge is helpful when the known luxury
+    # suppression branch exists, but alternate EUI layouts are non-fatal.
     if(Test-LEKPath $tradeLogic){
         $tl=[IO.File]::ReadAllText($tradeLogic)
         $bridgeBegin='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN'
@@ -84,10 +85,9 @@ try {
         } elseif($hasScoped) {
             W 'PASS  existing message-scoped EUI luxury handling' Green
         } elseif($simpleSuppression) {
-            W 'WARN  EUI still has a simple AIOfferingLux suppression branch without our bridge.' Yellow
-            W '      Install should normally patch this; test can continue and diagnostics will capture any hidden offers.' DarkGray
+            W 'WARN  EUI has a simple AIOfferingLux suppression branch without our bridge.' Yellow
         } elseif($tl -match 'AIOfferingLux\(\)') {
-            W 'PASS  alternate EUI AIOfferingLux layout accepted (non-fatal compatibility check)' Green
+            W 'PASS  alternate EUI AIOfferingLux layout accepted' Green
         } else {
             W 'PASS  EUI has no AIOfferingLux suppression branch; bridge not required' Green
         }
@@ -105,7 +105,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.1.2 SAFE CURRENCY VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.1.3 ONE-SESSION NATIVE VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

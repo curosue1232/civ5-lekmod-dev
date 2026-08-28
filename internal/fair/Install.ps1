@@ -6,7 +6,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.6 - CLEAN EXTENSION INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.0.7 - SAFE DIAGNOSTIC INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -54,9 +54,9 @@ try {
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.0.6 INSTALLED.' Green
-    W 'Silent native side-valuation engine is active; UI deal-helper buttons are never invoked headlessly.' Green
-    W 'No EUI LeaderHeadRoot.lua patch was required.' Green
+    W 'FAIR TRADES v1.0.7 SAFE DIAGNOSTIC INSTALLED.' Green
+    W 'This build observes trade opportunities but DOES NOT open or hook diplomacy.' Green
+    W 'Use it to verify that normal AI greetings/warnings no longer crash.' Green
     exit 0
 } catch {
     W ''

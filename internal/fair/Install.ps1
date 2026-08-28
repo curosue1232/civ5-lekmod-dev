@@ -84,10 +84,30 @@ try {
 MapModData = MapModData or {}
 MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_READY = true
 LuaEvents.LEKFairTradesAIOffer.Add(function(iPlayer, szMessage)
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = iPlayer
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING = false
     MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_CALLED_AI = iPlayer
     LeaderMessageHandler(iPlayer, DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER, szMessage, -1, 0)
     MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_AI = iPlayer
     MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_STATE = DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER
+end)
+Events.AILeaderMessage.Add(function(iPlayer, iState)
+    if MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI == iPlayer and
+       not MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING and
+       iState == DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_ACCEPTS_OFFER then
+        MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING = true
+        MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = -1
+        MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXITED_AI = iPlayer
+        UI.SetLeaderHeadRootUp(false)
+        UI.RequestLeaveLeader()
+    elseif MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI == iPlayer and
+           iState == DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_REJECTS_OFFER then
+        MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = -1
+    end
+end)
+Events.LeavingLeaderViewMode.Add(function()
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = -1
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING = false
 end)
 '@
     Set-LEKMarkedBlock $diploTrade '-- LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_BEGIN' '-- LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_END' $offerBridgeBody

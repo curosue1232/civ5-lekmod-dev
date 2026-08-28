@@ -414,6 +414,7 @@ local function ShowOneOffer(seed,h,turn)
   end)
   if not ok then
     S("NativeUIHeartbeat","ONE_SESSION_ERROR"); S("NativeUIError",tostring(e))
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI=-1
     if backendOpened then CloseSession(ai) end
     return false,tostring(e)
   end

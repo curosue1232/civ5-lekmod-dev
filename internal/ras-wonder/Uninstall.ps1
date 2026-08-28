@@ -13,19 +13,29 @@ try {
     if(!$civ){ throw 'Civilization V was not found.' }
 
     $inGame=Join-LEKPath $civ 'Assets\DLC\LEKMOD_V30.7\UI\InGame.lua'
+    $loadScreen=Join-LEKPath $civ 'Assets\DLC\UI_bc1\GameSetup\LoadScreen.lua'
     $startGame=Join-LEKPath $civ 'Assets\UI\FrontEnd\Multiplayer\GTAS_StartGame.lua'
 
-    if(Test-LEKPath $inGame){
-        $t=[IO.File]::ReadAllText($inGame)
-        $t=Remove-LEKMarkedBlock $t '-- GTAS_MP_V089_EARLY_WONDER_GRAPHICS_BEGIN' '-- GTAS_MP_V089_EARLY_WONDER_GRAPHICS_END'
-        Write-LEKUtf8NoBom $inGame $t
-        W 'REMOVED  InGame early wonder graphics block' Green
+    if(Test-LEKPath $loadScreen){
+        $t=[IO.File]::ReadAllText($loadScreen)
+        $t=Remove-LEKMarkedBlock $t '-- GTAS_MP_V089_REROLL_WONDER_LOADSCREEN_BEGIN' '-- GTAS_MP_V089_REROLL_WONDER_LOADSCREEN_END'
+        Write-LEKUtf8NoBom $loadScreen $t
+        W 'REMOVED  LoadScreen reroll wonder pre-render block' Green
     }
     if(Test-LEKPath $startGame){
         $t=[IO.File]::ReadAllText($startGame)
         $t=Remove-LEKMarkedBlock $t '-- GTAS_MP_V089_WONDER_RUNTIME_BEGIN' '-- GTAS_MP_V089_WONDER_RUNTIME_END'
         Write-LEKUtf8NoBom $startGame $t
-        W 'REMOVED  GTAS_StartGame wonder runtime block' Green
+        W 'REMOVED  GTAS_StartGame late replay guard block' Green
+    }
+    if(Test-LEKPath $inGame){
+        $t=[IO.File]::ReadAllText($inGame)
+        $before=$t
+        $t=Remove-LEKMarkedBlock $t '-- GTAS_MP_V089_EARLY_WONDER_GRAPHICS_BEGIN' '-- GTAS_MP_V089_EARLY_WONDER_GRAPHICS_END'
+        if($t -ne $before){
+            Write-LEKUtf8NoBom $inGame $t
+            W 'REMOVED  stale experimental InGame v0.8.9 block' Green
+        }
     }
 
     W ''

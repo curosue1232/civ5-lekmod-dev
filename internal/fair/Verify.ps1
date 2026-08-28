@@ -5,7 +5,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.1 SAFE SWAP VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.1.2 SAFE CURRENCY VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -34,18 +34,29 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 111' $t.Contains('local VERSION=111')
-        Check 'v1.1.1 safe swap marker' $t.Contains('-- LEK_FAIR_TRADES_SAFE_SWAP_V111')
-        Check 'safe swap runtime patch' $t.Contains('V111_SAFE_SPARE_LUX_SWAP')
-        Check 'spare luxury swap only' $t.Contains('SPARE_LUXURY_SWAP_ONLY_V111')
+        Check 'runtime version 112' $t.Contains('local VERSION=112')
+        Check 'v1.1.2 safe currency marker' $t.Contains('-- LEK_FAIR_TRADES_SAFE_CURRENCY_V112')
+        Check 'safe currency runtime patch' $t.Contains('V112_SAFE_LUX_SWAP_GOLD_GPT')
+        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V112')
+        Check 'currency offers both ways' $t.Contains('LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS')
         Check 'both sides preserve last copy' $t.Contains('BOTH_SIDES_PRESERVE_LAST_COPY')
-        Check 'requires two copies' $t.Contains('GetNumResourceAvailable(r.ID,true) or 0)>=2')
+        Check 'requires two luxury copies' $t.Contains('GetNumResourceAvailable(r.ID,true) or 0)>=2')
+        Check 'flat Gold supported' ($t.Contains('TRADE_ITEM_GOLD') -and $t.Contains('AddGoldTrade'))
+        Check 'GPT supported' ($t.Contains('TRADE_ITEM_GOLD_PER_TURN') -and $t.Contains('AddGoldPerTurnTrade'))
+        Check 'human luxury for Gold shape' $t.Contains('HUMAN_LUX_GOLD')
+        Check 'human luxury for GPT shape' $t.Contains('HUMAN_LUX_GPT')
+        Check 'AI luxury for Gold shape' $t.Contains('AI_LUX_GOLD')
+        Check 'AI luxury for GPT shape' $t.Contains('AI_LUX_GPT')
+        Check 'native value calibration' ($t.Contains('GetDealMyValue') -and $t.Contains('GetDealTheyreValue'))
+        Check 'same-side seller calibration' ($t.Contains('sellerNeeds=SideMy') -and $t.Contains('sellerValuePer=SideThey'))
+        Check 'same-side buyer calibration' ($t.Contains('buyerMaxValue=SideThey') -and $t.Contains('buyerCostPer=SideMy'))
+        Check 'final native fairness gate' $t.Contains('FINAL_NATIVE_VALUE_GATE')
+        Check '6-evaluation ceiling' $t.Contains('local MAX_EVALS=6')
         Check 'no native pricing helpers' (-not ($t.Contains('UI.DoWhatWillAIGive') -or $t.Contains('UI.DoWhatDoesAIWant') -or $t.Contains('UI.DoEqualizeDealWithHuman')))
-        Check 'no custom value math' (-not ($t.Contains('GetDealMyValue') -or $t.Contains('GetDealTheyreValue') -or $t.Contains('MAX_EVALS')))
         Check 'no scratch snapshot iterator' (-not ($t.Contains('GetNextItem') -or $t.Contains('local function Snapshot') -or $t.Contains('local function Rebuild')))
         Check 'one trade-session open call in runtime' ([regex]::Matches($t,'DoTradeScreenOpened\(\)').Count -eq 1)
         Check 'one human-opened trade call in runtime' ([regex]::Matches($t,'UI\.OnHumanOpenedTradeScreen').Count -eq 1)
-        Check 'scratch built after session initialization' ($t.IndexOf('UI.OnHumanOpenedTradeScreen(ai)') -lt $t.IndexOf('local d=UI.GetScratchDeal()'))
+        Check 'display scratch built after session init' ($t.IndexOf('UI.OnHumanOpenedTradeScreen(c.ai)') -lt $t.IndexOf('local d=UI.GetScratchDeal()', $t.IndexOf('local function ShowCandidate')))
         Check 'unique Fair Trades offer message' $t.Contains('I have a trade proposal that I believe is fair to both of us.')
         Check 'native AI offer state' $t.Contains('DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER')
         Check 'strategics never' $t.Contains('S("StrategicResources","NEVER")')
@@ -94,7 +105,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.1.1 SAFE SWAP VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.1.2 SAFE CURRENCY VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

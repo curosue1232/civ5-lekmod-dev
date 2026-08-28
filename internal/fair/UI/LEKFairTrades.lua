@@ -20,8 +20,9 @@ pcall(function() db=Modding.OpenUserData("LEK_FAIR_TRADES",DB_VERSION) end)
 local function S(k,v) if db then pcall(function() db.SetValue(k,v) end) end end
 
 -- LEK_FAIR_TRADES_DIRECT_NATIVE_OFFER_V108
--- LEK_FAIR_TRADES_NATIVE_GPT_UNIT_PRICE_HOTFIX_V108
-S("RuntimePatch","V108_NATIVE_GPT_UNIT_PRICE_HOTFIX")
+S("RuntimePatch","V108_NATIVE_SINGLE_AI_LUX_HOTFIX")
+S("AILuxuryOfferPolicy","ALLOW_SINGLE_COPY_IF_NATIVE_LEGAL_AND_FAIR")
+S("HumanLuxuryOfferPolicy","PRESERVE_LAST_COPY")
 S("LoadSafety","WAIT_FOR_REAL_HUMAN_TURN_START")
 S("OfferScanReason","V108_LOADED_WAITING_FOR_REAL_TURN_START")
 S("OfferScanTrail","")
@@ -127,12 +128,13 @@ local function Possible(d,from,to,item,x,y)
   local ok,v=pcall(function() return d:IsPossibleToTradeItem(from,to,item,x or 0,y or 0) end)
   return ok and v==true
 end
-local function SpareLux(pID,oID)
+local function OfferableLux(pID,oID,preserveLastCopy)
   local p,o=Players[pID],Players[oID]
   local a={}
   if not p or not o then return a end
+  local minOwned=preserveLastCopy and 2 or 1
   for r in GameInfo.Resources() do
-    if Luxury(r.ID) and (p:GetNumResourceAvailable(r.ID,true) or 0)>1
+    if Luxury(r.ID) and (p:GetNumResourceAvailable(r.ID,true) or 0)>=minOwned
        and (o:GetNumResourceAvailable(r.ID,true) or 0)<=0 then table.insert(a,r.ID) end
   end
   table.sort(a); return a
@@ -157,7 +159,9 @@ local function Structural(items,ai,h)
     if x.itemType==TradeableItems.TRADE_ITEM_RESOURCES then
       if not Luxury(x.data1) then return false,"UNSUPPORTED_OR_STRATEGIC_ITEM" end
       local q=math.max(1,x.data2 or 1)
-      if (Players[x.fromPlayer]:GetNumResourceAvailable(x.data1,true) or 0)<=q then return false,"LAST_LUXURY_COPY" end
+      if x.fromPlayer==h and (Players[h]:GetNumResourceAvailable(x.data1,true) or 0)<=q then
+        return false,"HUMAN_LAST_LUXURY_COPY"
+      end
     elseif x.itemType~=TradeableItems.TRADE_ITEM_GOLD and x.itemType~=TradeableItems.TRADE_ITEM_GOLD_PER_TURN then
       return false,"UNSUPPORTED_OR_STRATEGIC_ITEM"
     end
@@ -215,14 +219,13 @@ local function Seed(d,ai,h,fromHuman,res)
   return Values(d,ai,h)
 end
 
-local function NativeGPTUnitValue(d,ai,h,payer,recv)
-  Prep(d,h,ai)
+local function GPTUnitValue(ai,h,payer,recv)
+  local d=UI.GetScratchDeal(); Prep(d,h,ai)
   if not AddGPT(d,payer,recv,1) then return nil,"ONE_GPT_NOT_POSSIBLE" end
-  local v,why=Values(d,ai,h)
-  if not v then return nil,why end
+  local v,why=Values(d,ai,h); if not v then return nil,why end
   local unit=(payer==ai) and v.hThey or v.aiThey
-  if type(unit)~="number" or unit<=0 then return nil,"ONE_GPT_NATIVE_VALUE_INVALID" end
-  S("AI_"..ai.."_LastGPTUnitValue",unit)
+  if type(unit)~="number" or unit<=0 then return nil,"ONE_GPT_NATIVE_VALUE_ZERO" end
+  S("AI_"..ai.."_NativeOneGPTValue",unit)
   return unit,"OK"
 end
 
@@ -234,6 +237,9 @@ local function PriceLux(ai,h,fromHuman,res)
   S("AI_"..ai.."_LastSeedLuxuryValueMin",need); S("AI_"..ai.."_LastSeedLuxuryValueMax",ceiling)
   if need<=0 or ceiling<need then return nil,"NO_MUTUALLY_FAIR_PRICE_WINDOW" end
 
+  local unitGPT,unitWhy=GPTUnitValue(ai,h,payer,recv)
+  if not unitGPT then why=unitWhy end
+
   local function reset()
     Prep(d,h,ai); local from=fromHuman and h or ai; local to=fromHuman and ai or h
     if not Possible(d,from,to,TradeableItems.TRADE_ITEM_RESOURCES,res,1) then return false end
@@ -244,35 +250,18 @@ local function PriceLux(ai,h,fromHuman,res)
   if evals<MAX_EVALS and reset() and AddGold(d,payer,recv,math.ceil(need)) then
     local o,r=Candidate(d,ai,h,label.."GOLD"); if o then return o,r else why=r end
   end
-
-  local gptUnit=nil
-  if evals<MAX_EVALS then
-    local u,r=NativeGPTUnitValue(d,ai,h,payer,recv)
-    if u then gptUnit=u else why=r end
+  if unitGPT and evals<MAX_EVALS and reset() and AddGPT(d,payer,recv,math.max(1,math.ceil(need/unitGPT))) then
+    local o,r=Candidate(d,ai,h,label.."GPT"); if o then return o,r else why=r end
   end
-
-  if gptUnit and evals<MAX_EVALS and reset() then
-    local gpt=math.max(1,math.ceil(need/gptUnit))
-    if AddGPT(d,payer,recv,gpt) then
-      local o,r=Candidate(d,ai,h,label.."GPT"); if o then return o,r else why=r end
-    else
-      why="GPT_PAYMENT_NOT_AFFORDABLE_OR_LEGAL"
-    end
+  if unitGPT and evals<MAX_EVALS and reset() then
+    local p=Players[payer]; local gold=math.min(math.floor(need),(p and p.GetGold and (p:GetGold() or 0) or 0))
+    local rem=math.max(0,need-gold); local gpt=rem>0 and math.max(1,math.ceil(rem/unitGPT)) or 0
+    local added=false
+    if gold>0 then added=AddGold(d,payer,recv,gold) or added end
+    if gpt>0 then added=AddGPT(d,payer,recv,gpt) or added end
+    if added then local o,r=Candidate(d,ai,h,label.."MIXED"); if o then return o,r else why=r end end
   end
-
-  if gptUnit and evals<MAX_EVALS and reset() then
-    local p=Players[payer]
-    local gold=math.min(math.floor(need),(p and p.GetGold and (p:GetGold() or 0) or 0))
-    local rem=math.max(0,need-gold)
-    local gpt=rem>0 and math.max(1,math.ceil(rem/gptUnit)) or 0
-    local goldAdded=(gold>0) and AddGold(d,payer,recv,gold) or false
-    local gptAdded=(gpt>0) and AddGPT(d,payer,recv,gpt) or (gpt<=0)
-    if gpt>0 and not gptAdded then why="MIXED_GPT_NOT_AFFORDABLE_OR_LEGAL" end
-    if gptAdded and (goldAdded or gpt>0) then
-      local o,r=Candidate(d,ai,h,label.."MIXED"); if o then return o,r else why=r end
-    end
-  end
-  return nil,why or "NO_AFFORDABLE_NATIVE_PAYMENT"
+  return nil,why or "NO_SILENT_NATIVE_PRICE_CANDIDATE"
 end
 
 local function Swap(ai,h,hr,ar)
@@ -318,7 +307,7 @@ local function Show(o)
 end
 
 local function TryAI(ai,h,turn)
-  local hl,al=SpareLux(h,ai),SpareLux(ai,h)
+  local hl,al=OfferableLux(h,ai,true),OfferableLux(ai,h,false)
   S("AI_"..ai.."_HumanLuxCount",#hl); S("AI_"..ai.."_AILuxCount",#al)
   S("AI_"..ai.."_HumanLuxIDs",table.concat(hl,",")); S("AI_"..ai.."_AILuxIDs",table.concat(al,","))
   local off=Hash(turn.."|"..ai.."|SEED"); local attempts=0; local why="NO_LUXURY_SEEDS"
@@ -381,7 +370,6 @@ local function Scan()
   else Reason("NO_SILENT_NATIVE_FAIR_DEAL") end
 end
 
--- Transient only: registered solely when turn-start hits Civ V's message queue busy state.
 local Ready
 local function Unready(r)
   if retryRegistered and Events.SerialEventGameDataDirty then Events.SerialEventGameDataDirty.Remove(Ready) end

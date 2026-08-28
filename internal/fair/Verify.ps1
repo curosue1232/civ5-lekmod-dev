@@ -5,7 +5,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.9 VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.0.8 EUI BRIDGE VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -34,9 +34,9 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 109' $t.Contains('local VERSION=109')
-        Check 'v109 EUI bridge marker' $t.Contains('-- LEK_FAIR_TRADES_EUI_LUX_BRIDGE_V109')
-        Check 'Fair Trades allow flag' $t.Contains('MapModData.LEK_FAIR_TRADES_ALLOW_LUX_OFFER')
+        Check 'runtime version 108' $t.Contains('local VERSION=108')
+        Check 'clean v108 runtime marker' $t.Contains('-- LEK_FAIR_TRADES_DIRECT_NATIVE_OFFER_V108')
+        Check 'unique Fair Trades offer message' $t.Contains('I have a trade proposal that I believe is fair to both of us.')
         Check 'no DoBeginDiploWithHuman' (-not $t.Contains('DoBeginDiploWithHuman'))
         Check 'native AI offer state' $t.Contains('DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER')
         Check 'native trade screen open' ($t.Contains('DoTradeScreenOpened()') -and $t.Contains('UI.OnHumanOpenedTradeScreen'))
@@ -53,7 +53,7 @@ try {
         $tl=[IO.File]::ReadAllText($tradeLogic)
         Check 'EUI bridge begin' $tl.Contains('-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN')
         Check 'EUI bridge end' $tl.Contains('-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_END')
-        Check 'EUI bridge condition' $tl.Contains('if AIOfferingLux() and not (MapModData and MapModData.LEK_FAIR_TRADES_ALLOW_LUX_OFFER) then')
+        Check 'message-scoped EUI bridge' $tl.Contains('if AIOfferingLux() and szLeaderMessage ~= "I have a trade proposal that I believe is fair to both of us." then')
         Check 'exactly one EUI bridge' ([regex]::Matches($tl,'LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN').Count -eq 1)
     }
 
@@ -69,7 +69,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.0.9 VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.0.8 EUI BRIDGE VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

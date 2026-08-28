@@ -83,12 +83,10 @@ function Sync-Git {
     $git=Get-Command git.exe -ErrorAction SilentlyContinue
     if(!$git){
         W 'Git for Windows is not installed or is not in PATH.' Yellow
-        W 'You can still use this workspace normally. GitHub setup instructions are in README.md.' Gray
         return 2
     }
     if(!(Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Container)){
-        W 'This folder is not a Git clone yet.' Yellow
-        W 'Run GITHUB_SETUP.bat once, or clone the repository after it is created.' Gray
+        W 'This folder is not a Git clone yet. Run GITHUB_SETUP.bat once.' Yellow
         return 2
     }
     Push-Location $Root
@@ -97,14 +95,62 @@ function Sync-Git {
         $ec=[int]$LASTEXITCODE
         if($ec -ne 0){ return $ec }
         & git.exe pull --ff-only 2>&1 | ForEach-Object { Write-Host ([string]$_) }
-        return [int]$LASTEXITCODE
+        $ec=[int]$LASTEXITCODE
+        if($ec -eq 0){
+            $rev=(& git.exe rev-parse --short HEAD 2>$null | Select-Object -First 1)
+            if($rev){ W ('Workspace revision: '+[string]$rev) Cyan }
+        }
+        return $ec
     } finally { Pop-Location }
+}
+
+function Run-OneClickCycle {
+    if(Test-LEKCivRunning){ W 'Civilization V is running. Close it before updating.' Red; return 2 }
+    W '============================================================' Cyan
+    W ' ONE-CLICK DEV CYCLE' Cyan
+    W ' Sync -> Core verify -> Fair Trades -> RAS wonder hotfix' Cyan
+    W '============================================================' Cyan
+
+    W ''
+    W '[1/6] Sync latest GitHub revision' Cyan
+    $ec=Sync-Git
+    if($ec -ne 0){ return $ec }
+
+    W ''
+    W '[2/6] Verify frozen Core v1.3' Cyan
+    $ec=Run-Script 'internal\CoreVerify.ps1' @('-RASMode','Auto')
+    if($ec -ne 0){ return $ec }
+
+    W ''
+    W '[3/6] Install / update Fair Trades' Cyan
+    $ec=Run-Script 'internal\fair\Install.ps1'
+    if($ec -ne 0){ return $ec }
+
+    W ''
+    W '[4/6] Verify Fair Trades' Cyan
+    $ec=Run-Script 'internal\fair\Verify.ps1'
+    if($ec -ne 0){ return $ec }
+
+    W ''
+    W '[5/6] Install / update RAS wonder graphics hotfix' Cyan
+    $ec=Run-Script 'internal\ras-wonder\Install.ps1'
+    if($ec -ne 0){ return $ec }
+
+    W ''
+    W '[6/6] Verify RAS wonder graphics hotfix' Cyan
+    $ec=Run-Script 'internal\ras-wonder\Verify.ps1'
+    if($ec -ne 0){ return $ec }
+
+    W ''
+    W 'ALL CURRENT DEVELOPMENT PATCHES INSTALLED AND VERIFIED.' Green
+    W 'Start Civ V and test. If anything fails, use option 7 once and upload that ZIP.' Green
+    return 0
 }
 
 function Show-Header {
     Clear-Host
     W '============================================================' Cyan
-    W ' LEKMOD 30.7 DEVELOPMENT TOOL v1.3' Cyan
+    W ' LEKMOD 30.7 DEVELOPMENT TOOL v1.4' Cyan
     W ' Frozen Core v1.3 + Isolated Development Extensions' Cyan
     W '============================================================' Cyan
     $p=Get-SavedCivPath
@@ -125,6 +171,7 @@ function Invoke-Action([string]$A){
         'wonder-install' { return (Run-Script 'internal\ras-wonder\Install.ps1') }
         'wonder-verify'  { return (Run-Script 'internal\ras-wonder\Verify.ps1') }
         'wonder-remove'  { return (Run-Script 'internal\ras-wonder\Uninstall.ps1') }
+        'cycle'     { return (Run-OneClickCycle) }
         default     { throw ('Unknown action: '+$A) }
     }
 }
@@ -133,14 +180,16 @@ try {
     if($Action){ exit (Invoke-Action $Action) }
     while($true){
         Show-Header
+        W ' T   ONE-CLICK TEST UPDATE (sync + install + verify everything)' Green
+        W ''
         W ' 1   Set / save Civilization V path' White
-        W ' 2   Baseline check (core + clean extension state)' White
+        W ' 2   Baseline check' White
         W ' 3   Verify frozen Core v1.3' White
         W ' 4   Install / update Fair Trades' White
         W ' 5   Verify Fair Trades' White
         W ' 6   Uninstall Fair Trades only' White
         W ' 7   Capture ONE full diagnostic ZIP' White
-        W ' 8   Sync workspace from GitHub (git pull)' White
+        W ' 8   Sync workspace from GitHub only' White
         W ' 9   Install / update RAS wonder graphics hotfix' White
         W ' 10  Verify RAS wonder graphics hotfix' White
         W ' 11  Uninstall RAS wonder graphics hotfix' White
@@ -152,6 +201,7 @@ try {
         try {
             $ec=0
             switch($choice.ToUpperInvariant()){
+                'T' { $ec=Invoke-Action 'cycle' }
                 '1' { $ec=Invoke-Action 'path' }
                 '2' { $ec=Invoke-Action 'baseline' }
                 '3' { $ec=Invoke-Action 'core' }

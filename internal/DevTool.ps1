@@ -54,7 +54,11 @@ function Run-Script([string]$Rel,[string[]]$Extra=@()){
     $script=Join-Path $Root $Rel
     if(!(Test-Path -LiteralPath $script -PathType Leaf)){ throw ('Missing workspace script: '+$Rel) }
     $psArgs=@('-NoProfile','-ExecutionPolicy','Bypass','-File',$script,'-CivPath',$civ) + $Extra
-    & powershell.exe @psArgs
+
+    # Stream child-process output directly to the console. Do NOT allow stdout
+    # strings to become part of this function's return value, or callers such
+    # as the one-click cycle will mistake successful verifier text for an error.
+    & powershell.exe @psArgs 2>&1 | ForEach-Object { Write-Host ([string]$_) }
     return [int]$LASTEXITCODE
 }
 
@@ -150,7 +154,7 @@ function Run-OneClickCycle {
 function Show-Header {
     Clear-Host
     W '============================================================' Cyan
-    W ' LEKMOD 30.7 DEVELOPMENT TOOL v1.4' Cyan
+    W ' LEKMOD 30.7 DEVELOPMENT TOOL v1.4.1' Cyan
     W ' Frozen Core v1.3 + Isolated Development Extensions' Cyan
     W '============================================================' Cyan
     $p=Get-SavedCivPath

@@ -39,13 +39,29 @@ function Resolve-Civ([switch]$AllowPrompt){
     $auto=Find-LEKCivV ''
     if($auto){ Save-CivPath $auto; return $auto }
     if($AllowPrompt){
-        $manual=Read-Host 'Paste your Civilization V install folder'
+        $manual=Read-Host 'Paste Civilization V install folder'
         if($manual){
             $p=Find-LEKCivV $manual.Trim('"')
             if($p){ Save-CivPath $p; return $p }
         }
     }
     return $null
+}
+
+# Windows PowerShell 5.1 can turn stderr from a successful native program into
+# ErrorRecord objects. With ErrorActionPreference=Stop that can abort a git pull
+# merely because Git prints normal progress (for example "From https://...") to
+# stderr. Every native child call therefore runs under Continue locally; the
+# real native exit code remains authoritative.
+function Invoke-NativeConsole([scriptblock]$Command){
+    $savedEap=$ErrorActionPreference
+    try {
+        $ErrorActionPreference='Continue'
+        & $Command 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+        return [int]$LASTEXITCODE
+    } finally {
+        $ErrorActionPreference=$savedEap
+    }
 }
 
 function Run-Script([string]$Rel,[string[]]$Extra=@()){
@@ -55,11 +71,14 @@ function Run-Script([string]$Rel,[string[]]$Extra=@()){
     if(!(Test-Path -LiteralPath $script -PathType Leaf)){ throw ('Missing workspace script: '+$Rel) }
     $psArgs=@('-NoProfile','-ExecutionPolicy','Bypass','-File',$script,'-CivPath',$civ) + $Extra
 
-    # Stream child-process output directly to the console. Do NOT allow stdout
-    # strings to become part of this function's return value, or callers such
-    # as the one-click cycle will mistake successful verifier text for an error.
-    & powershell.exe @psArgs 2>&1 | ForEach-Object { Write-Host ([string]$_) }
-    return [int]$LASTEXITCODE
+    $savedEap=$ErrorActionPreference
+    try {
+        $ErrorActionPreference='Continue'
+        & powershell.exe @psArgs 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+        return [int]$LASTEXITCODE
+    } finally {
+        $ErrorActionPreference=$savedEap
+    }
 }
 
 function Set-PathInteractive {
@@ -95,16 +114,28 @@ function Sync-Git {
     }
     Push-Location $Root
     try {
-        & git.exe status --short 2>&1 | ForEach-Object { Write-Host ([string]$_) }
-        $ec=[int]$LASTEXITCODE
-        if($ec -ne 0){ return $ec }
-        & git.exe pull --ff-only 2>&1 | ForEach-Object { Write-Host ([string]$_) }
-        $ec=[int]$LASTEXITCODE
-        if($ec -eq 0){
-            $rev=(& git.exe rev-parse --short HEAD 2>$null | Select-Object -First 1)
-            if($rev){ W ('Workspace revision: '+[string]$rev) Cyan }
+        $savedEap=$ErrorActionPreference
+        try {
+            $ErrorActionPreference='Continue'
+
+            & git.exe status --short 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+            $ec=[int]$LASTEXITCODE
+            if($ec -ne 0){ return $ec }
+
+            & git.exe pull --ff-only 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+            $ec=[int]$LASTEXITCODE
+            if($ec -ne 0){ return $ec }
+
+            $revLines=@(& git.exe rev-parse --short HEAD 2>&1)
+            $revEc=[int]$LASTEXITCODE
+            if($revEc -eq 0 -and $revLines.Count -gt 0){
+                $rev=[string]$revLines[0]
+                if($rev){ W ('Workspace revision: '+$rev.Trim()) Cyan }
+            }
+            return 0
+        } finally {
+            $ErrorActionPreference=$savedEap
         }
-        return $ec
     } finally { Pop-Location }
 }
 
@@ -154,7 +185,7 @@ function Run-OneClickCycle {
 function Show-Header {
     Clear-Host
     W '============================================================' Cyan
-    W ' LEKMOD 30.7 DEVELOPMENT TOOL v1.4.1' Cyan
+    W ' LEKMOD 30.7 DEVELOPMENT TOOL v1.4.2' Cyan
     W ' Frozen Core v1.3 + Isolated Development Extensions' Cyan
     W '============================================================' Cyan
     $p=Get-SavedCivPath
@@ -218,8 +249,12 @@ try {
                 '10' { $ec=Invoke-Action 'wonder-verify' }
                 '11' { $ec=Invoke-Action 'wonder-remove' }
                 'G' {
-                    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'internal\GitHubSetup.ps1')
-                    $ec=[int]$LASTEXITCODE
+                    $savedEap=$ErrorActionPreference
+                    try {
+                        $ErrorActionPreference='Continue'
+                        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'internal\GitHubSetup.ps1') 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+                        $ec=[int]$LASTEXITCODE
+                    } finally { $ErrorActionPreference=$savedEap }
                 }
                 default { W 'Unknown choice.' Yellow; $ec=2 }
             }

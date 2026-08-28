@@ -11,7 +11,6 @@ local DB_VERSION=1
 local MAX_EVALS=8
 local MAX_SEEDS=2
 local MIN_OFFER_GAP=2
-local ONE_GPT_VALUE=25
 
 if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
 MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION=VERSION
@@ -21,7 +20,8 @@ pcall(function() db=Modding.OpenUserData("LEK_FAIR_TRADES",DB_VERSION) end)
 local function S(k,v) if db then pcall(function() db.SetValue(k,v) end) end end
 
 -- LEK_FAIR_TRADES_DIRECT_NATIVE_OFFER_V108
-S("RuntimePatch","V108_DIRECT_NATIVE_OFFER_NO_DEFAULT_ROOT")
+-- LEK_FAIR_TRADES_NATIVE_GPT_UNIT_PRICE_HOTFIX_V108
+S("RuntimePatch","V108_NATIVE_GPT_UNIT_PRICE_HOTFIX")
 S("LoadSafety","WAIT_FOR_REAL_HUMAN_TURN_START")
 S("OfferScanReason","V108_LOADED_WAITING_FOR_REAL_TURN_START")
 S("OfferScanTrail","")
@@ -215,6 +215,17 @@ local function Seed(d,ai,h,fromHuman,res)
   return Values(d,ai,h)
 end
 
+local function NativeGPTUnitValue(d,ai,h,payer,recv)
+  Prep(d,h,ai)
+  if not AddGPT(d,payer,recv,1) then return nil,"ONE_GPT_NOT_POSSIBLE" end
+  local v,why=Values(d,ai,h)
+  if not v then return nil,why end
+  local unit=(payer==ai) and v.hThey or v.aiThey
+  if type(unit)~="number" or unit<=0 then return nil,"ONE_GPT_NATIVE_VALUE_INVALID" end
+  S("AI_"..ai.."_LastGPTUnitValue",unit)
+  return unit,"OK"
+end
+
 local function PriceLux(ai,h,fromHuman,res)
   local d=UI.GetScratchDeal(); local base,why=Seed(d,ai,h,fromHuman,res); if not base then return nil,why end
   local payer=fromHuman and ai or h; local recv=fromHuman and h or ai
@@ -233,18 +244,35 @@ local function PriceLux(ai,h,fromHuman,res)
   if evals<MAX_EVALS and reset() and AddGold(d,payer,recv,math.ceil(need)) then
     local o,r=Candidate(d,ai,h,label.."GOLD"); if o then return o,r else why=r end
   end
-  if evals<MAX_EVALS and reset() and AddGPT(d,payer,recv,math.max(1,math.ceil(need/ONE_GPT_VALUE))) then
-    local o,r=Candidate(d,ai,h,label.."GPT"); if o then return o,r else why=r end
+
+  local gptUnit=nil
+  if evals<MAX_EVALS then
+    local u,r=NativeGPTUnitValue(d,ai,h,payer,recv)
+    if u then gptUnit=u else why=r end
   end
-  if evals<MAX_EVALS and reset() then
-    local p=Players[payer]; local gold=math.min(math.floor(need),(p and p.GetGold and (p:GetGold() or 0) or 0))
-    local rem=math.max(0,need-gold); local gpt=rem>0 and math.max(1,math.ceil(rem/ONE_GPT_VALUE)) or 0
-    local added=false
-    if gold>0 then added=AddGold(d,payer,recv,gold) or added end
-    if gpt>0 then added=AddGPT(d,payer,recv,gpt) or added end
-    if added then local o,r=Candidate(d,ai,h,label.."MIXED"); if o then return o,r else why=r end end
+
+  if gptUnit and evals<MAX_EVALS and reset() then
+    local gpt=math.max(1,math.ceil(need/gptUnit))
+    if AddGPT(d,payer,recv,gpt) then
+      local o,r=Candidate(d,ai,h,label.."GPT"); if o then return o,r else why=r end
+    else
+      why="GPT_PAYMENT_NOT_AFFORDABLE_OR_LEGAL"
+    end
   end
-  return nil,why or "NO_SILENT_NATIVE_PRICE_CANDIDATE"
+
+  if gptUnit and evals<MAX_EVALS and reset() then
+    local p=Players[payer]
+    local gold=math.min(math.floor(need),(p and p.GetGold and (p:GetGold() or 0) or 0))
+    local rem=math.max(0,need-gold)
+    local gpt=rem>0 and math.max(1,math.ceil(rem/gptUnit)) or 0
+    local goldAdded=(gold>0) and AddGold(d,payer,recv,gold) or false
+    local gptAdded=(gpt>0) and AddGPT(d,payer,recv,gpt) or (gpt<=0)
+    if gpt>0 and not gptAdded then why="MIXED_GPT_NOT_AFFORDABLE_OR_LEGAL" end
+    if gptAdded and (goldAdded or gpt>0) then
+      local o,r=Candidate(d,ai,h,label.."MIXED"); if o then return o,r else why=r end
+    end
+  end
+  return nil,why or "NO_AFFORDABLE_NATIVE_PAYMENT"
 end
 
 local function Swap(ai,h,hr,ar)
@@ -285,7 +313,7 @@ local function Show(o)
     pcall(function() Players[o.aiID]:DoTradeScreenClosed(false) end)
     return false
   end
-  S("NativeUIHeartbeat","DIRECT_AI_OFFER_STATE_SENT")
+  S("NativeUIHeartbeat","DIRECT_TRADE_OFFER_EVENT_SENT")
   return true
 end
 

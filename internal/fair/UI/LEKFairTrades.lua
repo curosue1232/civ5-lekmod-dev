@@ -1,9 +1,9 @@
--- LEKMOD 30.7 Fair Trades v1.1.4d DEFERRED UI VALIDATION HOTFIX
+-- LEKMOD 30.7 Fair Trades v1.1.4e CRASH-SAFE DEFERRED UI HOTFIX
 -- One selected AI backend trade session, no native trade-helper UI calls.
 -- Build/value exact luxury / Gold / GPT candidates before the human trade UI opens.
--- Reserve one native-value evaluation to re-check the exact rebuilt display deal.
+-- After UI opens, rebuild the already-validated candidate only; no native value calls.
 
-print("LEK Fair Trades v1.1.4d DEFERRED UI VALIDATION HOTFIX: loading")
+print("LEK Fair Trades v1.1.4e CRASH-SAFE DEFERRED UI HOTFIX: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
@@ -11,7 +11,7 @@ local VERSION=114
 local DB_VERSION=1
 local MIN_OFFER_GAP=2
 local MAX_EVALS=8
-local SEARCH_EVAL_LIMIT=MAX_EVALS-1
+local SEARCH_EVAL_LIMIT=MAX_EVALS
 
 -- LEK_FAIR_TRADES_DIRECT_VALUE_V114
 if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
@@ -29,8 +29,8 @@ local function Reason(r)
 end
 
 S("RuntimePatch","V114_DIRECT_NATIVE_VALUE_NO_TRADE_HELPERS")
-S("RuntimeHotfix","V114D_DEFERRED_UI_DISPLAY_REVALIDATE")
-S("OfferEngine","ONE_AI_BACKEND_SESSION_DIRECT_NATIVE_VALUE_V114D")
+S("RuntimeHotfix","V114E_NO_POST_UI_NATIVE_VALUE")
+S("OfferEngine","ONE_AI_BACKEND_SESSION_DIRECT_NATIVE_VALUE_V114E")
 S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V114")
 S("StrategicResources","NEVER")
 S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
@@ -38,7 +38,7 @@ S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
 S("TradeSessionPolicy","BACKEND_SESSION_FIRST_UI_ONLY_AFTER_VALID_CANDIDATE")
 S("NativeHelperPolicy","NONE_NO_DOWHATWILLGIVE_NO_DOWHATWANT_NO_EQUALIZE")
 S("ScratchDealPolicy","DIRECT_BUILD_VALIDATE_SHOW_SAME_SCRATCH")
-S("DeferredUIPolicy","VALIDATE_BACKEND_THEN_UI_REBUILD_THEN_REVALIDATE_EXACT_CANDIDATE")
+S("DeferredUIPolicy","VALIDATE_BACKEND_THEN_UI_REBUILD_NO_POST_UI_NATIVE_VALUE")
 S("NativeEvalBudget",MAX_EVALS)
 S("SearchNativeEvalBudget",SEARCH_EVAL_LIMIT)
 
@@ -382,14 +382,7 @@ local function ShowOneOffer(seed,h,turn)
     uiOpened=true
     local built,buildWhy=BuildCandidate(d,candidate,h,ai)
     if not built then error(buildWhy) end
-
-    -- UI.OnHumanOpenedTradeScreen may reset/mutate scratch state. Re-evaluate the
-    -- exact rebuilt candidate before handing it to the AI-offer UI. One eval is
-    -- reserved specifically for this display validation.
-    local displayV,displayWhy=Eval(d,ai,h)
-    if not displayV then error("DISPLAY_NATIVE_VALUE_"..tostring(displayWhy)) end
-    if not BothFair(displayV) then error("DISPLAY_NATIVE_VALUE_GATE") end
-    S("DisplayValidation","BOTH_FAIR")
+    S("DisplayValidation","REBUILT_NO_POST_UI_NATIVE_VALUE")
 
     S("LastShownAI",ai); S("LastShownTurn",Game.GetGameTurn()); S("LastShownShape",candidate.shape or "")
     S("NativeUIHeartbeat","UI_OPEN_EXACT_CANDIDATE_READY")
@@ -458,6 +451,6 @@ local function Finish() if retryRegistered or retryArmed then RemoveRetry() end 
 Events.ActivePlayerTurnStart.Add(Start)
 if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
 S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)
-S("PerformanceModel","ONE_AI_BACKEND_SESSION_MAX_7_SEARCH_PLUS_1_DISPLAY_NATIVE_VALUE_CALL_UI_ONLY_AFTER_VALID_CANDIDATE")
+S("PerformanceModel","ONE_AI_BACKEND_SESSION_MAX_8_PRE_UI_NATIVE_VALUE_CALLS_NO_POST_UI_NATIVE_VALUE")
 S("RelationshipModel","GUARDED_5_NEUTRAL_3_FRIENDLY_AFRAID_2")
-print("LEK Fair Trades v1.1.4d DEFERRED UI VALIDATION HOTFIX: ready")
+print("LEK Fair Trades v1.1.4e CRASH-SAFE DEFERRED UI HOTFIX: ready")

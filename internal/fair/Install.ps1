@@ -6,7 +6,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.1 - CLEAN EXTENSION INSTALLER (workspace v1.2)' Cyan
+    W ' LEK FAIR TRADES v1.0.2 - CLEAN EXTENSION INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -39,15 +39,25 @@ try {
         throw 'Old Fair AI Trades remnants detected. Run the cleanup tool first; nothing was changed.'
     }
 
-    $backupRoot=Join-Path $Root 'local\backups\fair' 
+    $backupRoot=Join-Path $Root 'local\backups\fair'
     [void](Backup-LEKFileOnce $inGame $backupRoot 'InGame.lua')
 
     $begin='-- LEK_EXT_FAIR_TRADES_LOADER_BEGIN'
     $end='-- LEK_EXT_FAIR_TRADES_LOADER_END'
     Set-LEKMarkedBlock $inGame $begin $end 'ContextPtr:LoadNewContext("LEKFairTrades")'
 
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'UI\LEKFairTrades.lua') -Destination (Join-Path $lekUI 'LEKFairTrades.lua') -Force
+    $installedLua=Join-Path $lekUI 'LEKFairTrades.lua'
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'UI\LEKFairTrades.lua') -Destination $installedLua -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'UI\LEKFairTrades.xml') -Destination (Join-Path $lekUI 'LEKFairTrades.xml') -Force
+
+    # v1.0.2: ActivePlayerTurnStart happens while the MP message queue is still
+    # busy on the target setup. Patch the installed runtime with a short bounded
+    # retry that self-removes as soon as the queue clears. The repository source
+    # remains clean and installation is deterministic/idempotent.
+    $hotfix=Join-Path $PSScriptRoot 'ApplyRuntimeHotfix.ps1'
+    if(!(Test-Path -LiteralPath $hotfix -PathType Leaf)){ throw 'Fair Trades v1.0.2 runtime hotfix script is missing.' }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $hotfix -RuntimePath $installedLua
+    if($LASTEXITCODE -ne 0){ throw 'Fair Trades v1.0.2 runtime hotfix failed.' }
 
     W ''
     W 'Running Fair Trades verifier...' Cyan
@@ -55,9 +65,9 @@ try {
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.0.1 INSTALLED.' Green
+    W 'FAIR TRADES v1.0.2 INSTALLED.' Green
+    W 'Bounded turn-start message-queue retry is active.' Green
     W 'No EUI LeaderHeadRoot.lua patch was required.' Green
-    W 'Use CAPTURE_DEV_STATE.bat for the canonical one-file diagnostic.' Cyan
     exit 0
 } catch {
     W ''

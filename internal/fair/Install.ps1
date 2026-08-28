@@ -1,4 +1,4 @@
-﻿param([string]$CivPath='')
+param([string]$CivPath='')
 $ErrorActionPreference='Stop'
 $Root=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'LekTools.ps1')
@@ -6,7 +6,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.7 - SAFE DIAGNOSTIC INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.0.9 INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -22,11 +22,13 @@ try {
     $lekUI=Join-LEKPath $civ 'Assets\DLC\LEKMOD_V30.7\UI'
     $inGame=Join-LEKPath $lekUI 'InGame.lua'
     $leader=Get-LEKLeaderRoot $civ
+    $tradeLogic=Join-LEKPath $civ 'Assets\DLC\UI_bc1\LeaderHead\TradeLogic.lua'
     if(!(Test-LEKPath $inGame)){ throw 'Lekmod InGame.lua not found.' }
     if(!(Test-LEKPath $leader)){ throw 'EUI LeaderHeadRoot.lua not found.' }
+    if(!(Test-LEKPath $tradeLogic)){ throw 'EUI TradeLogic.lua not found at Assets\DLC\UI_bc1\LeaderHead\TradeLogic.lua.' }
 
     $old=@()
-    foreach($p in @($inGame,$leader)){
+    foreach($p in @($inGame,$leader,$tradeLogic)){
         $txt=[IO.File]::ReadAllText($p)
         if($txt -match 'LEK_MP_FAIR_AI_TRADES_'){ $old += ('old marker in '+$p) }
     }
@@ -40,10 +42,24 @@ try {
 
     $backupRoot=Join-Path $Root 'local\backups\fair'
     [void](Backup-LEKFileOnce $inGame $backupRoot 'InGame.lua')
+    [void](Backup-LEKFileOnce $tradeLogic $backupRoot 'TradeLogic.lua')
 
-    $begin='-- LEK_EXT_FAIR_TRADES_LOADER_BEGIN'
-    $end='-- LEK_EXT_FAIR_TRADES_LOADER_END'
-    Set-LEKMarkedBlock $inGame $begin $end 'ContextPtr:LoadNewContext("LEKFairTrades")'
+    Set-LEKMarkedBlock $inGame '-- LEK_EXT_FAIR_TRADES_LOADER_BEGIN' '-- LEK_EXT_FAIR_TRADES_LOADER_END' 'ContextPtr:LoadNewContext("LEKFairTrades")'
+
+    # EUI normally discards AI luxury offers. Keep that behavior for ordinary AI
+    # messages, but allow the one Fair Trades offer while its runtime flag is armed.
+    $bridgeBegin='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN'
+    $bridgeEnd='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_END'
+    $tl=[IO.File]::ReadAllText($tradeLogic)
+    if(!$tl.Contains($bridgeBegin)){
+        $pattern='(?m)^(?<indent>[ \t]*)if[ \t]+AIOfferingLux\(\)[ \t]+then[ \t]*$'
+        $m=[regex]::Match($tl,$pattern)
+        if(!$m.Success){ throw 'Expected EUI AIOfferingLux suppression branch was not found. TradeLogic was not patched.' }
+        $indent=$m.Groups['indent'].Value
+        $replacement=$indent+$bridgeBegin+"`r`n"+$indent+'if AIOfferingLux() and not (MapModData and MapModData.LEK_FAIR_TRADES_ALLOW_LUX_OFFER) then'+"`r`n"+$indent+$bridgeEnd
+        $tl=[regex]::Replace($tl,$pattern,[System.Text.RegularExpressions.MatchEvaluator]{ param($x) $replacement },1)
+        Write-LEKUtf8NoBom $tradeLogic $tl
+    }
 
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'UI\LEKFairTrades.lua') -Destination (Join-Path $lekUI 'LEKFairTrades.lua') -Force
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'UI\LEKFairTrades.xml') -Destination (Join-Path $lekUI 'LEKFairTrades.xml') -Force
@@ -54,9 +70,8 @@ try {
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.0.7 SAFE DIAGNOSTIC INSTALLED.' Green
-    W 'This build observes trade opportunities but DOES NOT open or hook diplomacy.' Green
-    W 'Use it to verify that normal AI greetings/warnings no longer crash.' Green
+    W 'FAIR TRADES v1.0.9 INSTALLED.' Green
+    W 'Validated luxury offers may pass the EUI luxury-suppression branch; ordinary AI chatter remains suppressed.' Green
     exit 0
 } catch {
     W ''

@@ -6,7 +6,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.3 ONE-SESSION NATIVE INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.1.4 DIRECT NATIVE VALUE INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -89,10 +89,10 @@ try {
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.1.3 ONE-SESSION NATIVE INSTALLED.' Green
+    W 'FAIR TRADES v1.1.4 DIRECT NATIVE VALUE INSTALLED.' Green
     if($bridgeChanged){ W 'EUI luxury-offer compatibility bridge was installed.' Green }
-    W 'One AI is selected before diplomacy opens; Civ V builds the Gold/GPT price inside that one session.' Green
-    W 'Only simple luxury/Gold/GPT results are shown, and both sides keep their last luxury copy.' Green
+    W 'One AI session is opened at most; no native what-will-you-give/want/equalize helpers are called.' Green
+    W 'Only exact luxury, flat Gold, or GPT candidates are built and both players must pass native value checks.' Green
     exit 0
 } catch {
     W ''

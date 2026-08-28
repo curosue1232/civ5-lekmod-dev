@@ -5,7 +5,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.6 VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.0.7 SAFE DIAGNOSTIC VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -32,46 +32,24 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 106' $t.Contains('local VERSION=106')
-        Check 'silent native valuation marker' $t.Contains('-- LEK_FAIR_TRADES_SILENT_NATIVE_VALUATION_V106')
-        Check 'inventory-first luxury discovery' $t.Contains('-- LEK_FAIR_TRADES_INVENTORY_SEED_FIX_V106')
-        Check 'transient ready-signal marker' $t.Contains('-- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V106_BEGIN')
+        Check 'runtime version 107' $t.Contains('local VERSION = 107')
+        Check 'safe observer marker' $t.Contains('-- LEK_FAIR_TRADES_SAFE_OBSERVER_V107')
         Check 'runtime context hidden' $t.Contains('ContextPtr:SetHide(true)')
-        Check 'native GetDealMyValue engine' $t.Contains('GetDealMyValue(d)')
-        Check 'native GetDealTheyreValue engine' $t.Contains('GetDealTheyreValue(d)')
-        Check 'hard 8-evaluation budget' $t.Contains('local MAX_EVALS=8')
-        Check 'AI native acceptance gate' $t.Contains('if v.aiThey<v.aiMy then')
-        Check 'human native fairness gate' $t.Contains('if v.hThey<v.hMy then')
-        Check 'strategics rejected structurally' $t.Contains('UNSUPPORTED_OR_STRATEGIC_ITEM')
-        Check 'two-sided deal required' $t.Contains('ONE_SIDED_DEAL')
-        Check 'turn-start event hook' $t.Contains('Events.ActivePlayerTurnStart.Add(Start)')
-        Check 'turn-end retry cleanup' $t.Contains('Events.ActivePlayerTurnEnd.Add(Finish)')
-        Check 'transient GameDataDirty add' $t.Contains('Events.SerialEventGameDataDirty.Add(Ready)')
-        Check 'transient GameDataDirty remove' $t.Contains('Events.SerialEventGameDataDirty.Remove(Ready)')
-        Check 'rolling scan trail' $t.Contains('OfferScanTrail')
-        Check 'seed inventory IDs diagnostics' ($t.Contains('_HumanLuxIDs') -and $t.Contains('_AILuxIDs'))
-        Check 'no executable SetUpdate' (-not [regex]::IsMatch($t, '(?m)^[ \t]*ContextPtr:SetUpdate[ \t]*\('))
-        Check 'no executable DoWhatWillAIGive' (-not [regex]::IsMatch($t, '(?m)^[ \t]*UI\.DoWhatWillAIGive[ \t]*\('))
-        Check 'no executable DoWhatDoesAIWant' (-not [regex]::IsMatch($t, '(?m)^[ \t]*UI\.DoWhatDoesAIWant[ \t]*\('))
-
-        # Count executable registrations/removals even when the call is guarded
-        # later on the line (e.g. "if retryRegistered then Events....Remove").
-        # Comments are excluded so documentation cannot affect verification.
-        $dirtyAddCount=[regex]::Matches($t,'(?m)^[ \t]*(?!--)[^\r\n]*\bEvents\.SerialEventGameDataDirty\.Add[ \t]*\(').Count
-        $dirtyRemoveCount=[regex]::Matches($t,'(?m)^[ \t]*(?!--)[^\r\n]*\bEvents\.SerialEventGameDataDirty\.Remove[ \t]*\(').Count
-        Check 'exactly one transient dirty add' ($dirtyAddCount -eq 1)
-        Check 'exactly one transient dirty remove' ($dirtyRemoveCount -eq 1)
-        Check 'no old GetTotalValue loop' (-not $t.Contains('GetTotalValueToMeNormal'))
-
-        $spare=[regex]::Match($t,'(?s)local function SpareLux\(.*?local function Prep').Value
-        $prematurePossible=$false
-        if($spare){ $prematurePossible=[regex]::IsMatch($spare,'(?m)^[ \t]*(?!--).*\bPossible[ \t]*\(') }
-        Check 'no premature executable Possible() in inventory discovery' ($spare -and -not $prematurePossible)
+        Check 'real turn-start observer hook' $t.Contains('Events.ActivePlayerTurnStart.Add(Scan)')
+        Check 'inventory diagnostics' ($t.Contains('_HumanLuxIDs') -and $t.Contains('_AILuxIDs'))
+        Check 'no DoBeginDiploWithHuman anywhere' (-not $t.Contains('DoBeginDiploWithHuman'))
+        Check 'no AILeaderMessage handler' (-not $t.Contains('Events.AILeaderMessage.Add'))
+        Check 'no scratch deal access' (-not $t.Contains('UI.GetScratchDeal'))
+        Check 'no trade-screen open' (-not $t.Contains('DoTradeScreenOpened'))
+        Check 'no OnHumanOpenedTradeScreen' (-not $t.Contains('UI.OnHumanOpenedTradeScreen'))
+        Check 'no GameDataDirty retry' (-not $t.Contains('SerialEventGameDataDirty'))
+        Check 'no SetUpdate scanner' (-not $t.Contains('ContextPtr:SetUpdate'))
+        Check 'no load bootstrap event' (-not $t.Contains('SequenceGameInitComplete.Add'))
     }
 
     if(Test-LEKPath $xml){
         $xt=[IO.File]::ReadAllText($xml)
-        Check 'event-driven Fair Trades context is hidden' ($xt -match 'Hidden="1"')
+        Check 'Fair Trades context remains hidden' ($xt -match 'Hidden="1"')
     }
 
     if(Test-LEKPath $leader){
@@ -86,7 +64,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.0.6 VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.0.7 SAFE DIAGNOSTIC VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     if($failed.Count -gt 0){
         W 'Failed checks:' Red

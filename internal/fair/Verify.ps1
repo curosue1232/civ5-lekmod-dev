@@ -5,7 +5,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.0.5 VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.0.6 VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -32,35 +32,35 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 105' $t.Contains('local RUNTIME_VERSION = 105')
-        Check 'inventory-first luxury seed fix' $t.Contains('-- LEK_FAIR_TRADES_INVENTORY_SEED_FIX_V105')
-        Check 'transient ready-signal marker' $t.Contains('-- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V105_BEGIN')
+        Check 'runtime version 106' $t.Contains('local VERSION=106')
+        Check 'silent native valuation marker' $t.Contains('-- LEK_FAIR_TRADES_SILENT_NATIVE_VALUATION_V106')
+        Check 'inventory-first luxury discovery' $t.Contains('-- LEK_FAIR_TRADES_INVENTORY_SEED_FIX_V106')
+        Check 'transient ready-signal marker' $t.Contains('-- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V106_BEGIN')
         Check 'runtime context hidden' $t.Contains('ContextPtr:SetHide(true)')
-        Check 'native what-will-AI-give engine' $t.Contains('UI.DoWhatWillAIGive()')
-        Check 'native what-does-AI-want engine' $t.Contains('UI.DoWhatDoesAIWant()')
-        Check 'hard 8-call helper budget' $t.Contains('MAX_NATIVE_HELPER_CALLS_PER_TURN = 8')
-        Check 'human fairness gate' $t.Contains('if aiGives < humanGives then return false, "HUMAN_FAIRNESS_GATE" end')
-        Check 'strategics rejected' $t.Contains('UNSUPPORTED_OR_STRATEGIC_ITEM')
-        Check 'turn-start event hook' $t.Contains('Events.ActivePlayerTurnStart.Add(OnTurnStart)')
-        Check 'turn-end retry cleanup' $t.Contains('Events.ActivePlayerTurnEnd.Add(OnTurnEnd)')
-        Check 'transient GameDataDirty add' $t.Contains('Events.SerialEventGameDataDirty.Add(OnTurnReadySignal)')
-        Check 'transient GameDataDirty remove' $t.Contains('Events.SerialEventGameDataDirty.Remove(OnTurnReadySignal)')
+        Check 'native GetDealMyValue engine' $t.Contains('GetDealMyValue(d)')
+        Check 'native GetDealTheyreValue engine' $t.Contains('GetDealTheyreValue(d)')
+        Check 'hard 8-evaluation budget' $t.Contains('local MAX_EVALS=8')
+        Check 'AI native acceptance gate' $t.Contains('if v.aiThey<v.aiMy then')
+        Check 'human native fairness gate' $t.Contains('if v.hThey<v.hMy then')
+        Check 'strategics rejected structurally' $t.Contains('UNSUPPORTED_OR_STRATEGIC_ITEM')
+        Check 'two-sided deal required' $t.Contains('ONE_SIDED_DEAL')
+        Check 'turn-start event hook' $t.Contains('Events.ActivePlayerTurnStart.Add(Start)')
+        Check 'turn-end retry cleanup' $t.Contains('Events.ActivePlayerTurnEnd.Add(Finish)')
+        Check 'transient GameDataDirty add' $t.Contains('Events.SerialEventGameDataDirty.Add(Ready)')
+        Check 'transient GameDataDirty remove' $t.Contains('Events.SerialEventGameDataDirty.Remove(Ready)')
         Check 'rolling scan trail' $t.Contains('OfferScanTrail')
         Check 'seed inventory IDs diagnostics' ($t.Contains('_HumanLuxIDs') -and $t.Contains('_AILuxIDs'))
         Check 'no executable SetUpdate' (-not [regex]::IsMatch($t, '(?m)^[ \t]*ContextPtr:SetUpdate[ \t]*\('))
+        Check 'no executable DoWhatWillAIGive' (-not [regex]::IsMatch($t, '(?m)^[ \t]*UI\.DoWhatWillAIGive[ \t]*\('))
+        Check 'no executable DoWhatDoesAIWant' (-not [regex]::IsMatch($t, '(?m)^[ \t]*UI\.DoWhatDoesAIWant[ \t]*\('))
         Check 'exactly one transient dirty add' ([regex]::Matches($t,'(?m)^[ \t]*Events\.SerialEventGameDataDirty\.Add[ \t]*\(').Count -eq 1)
         Check 'exactly one transient dirty remove' ([regex]::Matches($t,'(?m)^[ \t]*Events\.SerialEventGameDataDirty\.Remove[ \t]*\(').Count -eq 1)
         Check 'no old GetTotalValue loop' (-not $t.Contains('GetTotalValueToMeNormal'))
 
-        # Only reject an EXECUTABLE Possible(...) call inside SpareLuxuries.
-        # v1.0.5 intentionally mentions Possible() in comments explaining why the
-        # legality check moved into RunNativeSeed; comments must not fail verify.
-        $spare=[regex]::Match($t,'(?s)local function SpareLuxuries\(.*?local function SnapshotDeal').Value
+        $spare=[regex]::Match($t,'(?s)local function SpareLux\(.*?local function Prep').Value
         $prematurePossible=$false
-        if($spare){
-            $prematurePossible=[regex]::IsMatch($spare,'(?m)^[ \t]*(?!--).*\bPossible[ \t]*\(')
-        }
-        Check 'no premature executable Possible() check in luxury inventory discovery' ($spare -and -not $prematurePossible)
+        if($spare){ $prematurePossible=[regex]::IsMatch($spare,'(?m)^[ \t]*(?!--).*\bPossible[ \t]*\(') }
+        Check 'no premature executable Possible() in inventory discovery' ($spare -and -not $prematurePossible)
     }
 
     if(Test-LEKPath $xml){
@@ -80,11 +80,7 @@ try {
     }
 
     W ''
-    if($good){
-        W 'FAIR TRADES v1.0.5 VERIFIED.' Green
-        exit 0
-    }
-
+    if($good){ W 'FAIR TRADES v1.0.6 VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     if($failed.Count -gt 0){
         W 'Failed checks:' Red

@@ -107,7 +107,7 @@ try {
         Check 'EUI bridge calls LeaderMessageHandler directly' $dt.Contains('LeaderMessageHandler(iPlayer, DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER, szMessage, -1, 0)')
         Check 'EUI bridge acknowledges handled AI' $dt.Contains('LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_AI = iPlayer')
         Check 'Fair Trades offer tracks active AI' $dt.Contains('LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = iPlayer')
-        Check 'accepted Fair Trades offer auto-exits leader view' ($dt.Contains('DIPLO_UI_STATE_TRADE_AI_ACCEPTS_OFFER') -and $dt.Contains('UI.SetLeaderHeadRootUp(false)') -and $dt.Contains('UI.RequestLeaveLeader()'))
+        Check 'accepted Fair Trades offer auto-exits leader view' ($dt.Contains('DIPLO_UI_STATE_TRADE_AI_ACCEPTS_OFFER') -and $dt.Contains('DIPLO_UI_STATE_BLANK_DISCUSSION') -and $dt.Contains('UI.SetLeaderHeadRootUp(false)') -and $dt.Contains('UI.RequestLeaveLeader()'))
         Check 'post-accept auto-exit is one-shot' $dt.Contains('LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING')
         Check 'Fair Trades marker clears when leader view leaves' $dt.Contains('Events.LeavingLeaderViewMode.Add')
     }

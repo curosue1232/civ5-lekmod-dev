@@ -94,7 +94,8 @@ end)
 Events.AILeaderMessage.Add(function(iPlayer, iState)
     if MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI == iPlayer and
        not MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING and
-       iState == DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_ACCEPTS_OFFER then
+       (iState == DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_ACCEPTS_OFFER or
+        iState == DiploUIStateTypes.DIPLO_UI_STATE_BLANK_DISCUSSION) then
         MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING = true
         MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = -1
         MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXITED_AI = iPlayer

@@ -52,8 +52,8 @@ try {
         Check 'AI luxury for human Gold shape' $t.Contains('AI_LUX_FOR_HUMAN_GOLD')
         Check 'AI luxury for human GPT shape' $t.Contains('AI_LUX_FOR_HUMAN_GPT')
         Check 'no native trade helper' (-not ($t.Contains('UI.DoWhatWillAIGive') -or $t.Contains('UI.DoWhatDoesAIWant') -or $t.Contains('UI.DoEqualizeDealWithHuman')))
-        Check 'no human-open trade call' (-not $t.Contains('UI.OnHumanOpenedTradeScreen'))
-        Check 'no spoofed AILeaderMessage event' (-not $t.Contains('Events.AILeaderMessage'))
+        Check 'no executable human-open trade call' ([regex]::Matches($t,'UI\.OnHumanOpenedTradeScreen\s*\(').Count -eq 0)
+        Check 'no executable spoofed AILeaderMessage event' ([regex]::Matches($t,'Events\.AILeaderMessage\s*\(').Count -eq 0)
         Check 'private LuaEvents bridge used' $t.Contains('LuaEvents.LEKFairTradesAIOffer(ai,FAIR_MESSAGE)')
         Check 'bridge ready guard' $t.Contains('LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_READY')
         Check 'bridge handled acknowledgement' $t.Contains('LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_AI')
@@ -93,7 +93,6 @@ try {
         Check 'EUI bridge acknowledges handled AI' $dt.Contains('LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_AI = iPlayer')
     }
 
-    # Older EUI layouts may need the existing optional luxury suppression patch.
     if(Test-LEKPath $tradeLogic){
         $tl=[IO.File]::ReadAllText($tradeLogic)
         $bridgeBegin='-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN'

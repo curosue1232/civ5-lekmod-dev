@@ -20,11 +20,14 @@ local db=nil
 pcall(function() db=Modding.OpenUserData("LEK_FAIR_TRADES",DB_VERSION) end)
 local function S(k,v) if db then pcall(function() db.SetValue(k,v) end) end end
 
--- LEK_FAIR_TRADES_V106_BOOTSTRAP_SCAN_HOTFIX_1
--- Clear volatile scan keys so a capture can never mistake an older runtime's
--- last turn for this session before the first v1.0.6 scan runs.
-S("RuntimePatch","V106_BOOTSTRAP_SCAN_HOTFIX_1")
-S("OfferScanReason","V106_LOADED_WAITING_FOR_SCAN")
+-- LEK_FAIR_TRADES_V106_NO_LOADTIME_DIPLO_HOTFIX_2
+-- Never generate/open proactive diplomacy during SequenceGameInitComplete or
+-- immediately during save/new-game initialization. Normal AI greetings,
+-- warnings, demands, and other queued diplomacy must finish first. Fair Trades
+-- begins on the next real ActivePlayerTurnStart only.
+S("RuntimePatch","V106_NO_LOADTIME_DIPLO_HOTFIX_2")
+S("LoadSafety","WAIT_FOR_NEXT_REAL_HUMAN_TURN_START")
+S("OfferScanReason","V106_LOADED_WAITING_FOR_NEXT_TURN_START")
 S("OfferScanTrail","")
 S("OfferScanTurn",-1)
 S("OfferNativeEvals",0)
@@ -281,9 +284,19 @@ local function Queue(o)
   S("NativeUIHeartbeat","BEGIN_DIPLO_SENT"); return true
 end
 
+-- LEK_FAIR_TRADES_DIPLO_COLLISION_GUARD_V106_HOTFIX_2
 local function OnLeader(i,state,msg,anim,data)
   local o=pending
-  if not o or i~=o.aiID or Game.GetActivePlayer()~=o.humanID or state~=DiploUIStateTypes.DIPLO_UI_STATE_DEFAULT_ROOT then return end
+  if not o then return end
+  -- Any normal/other diplomacy message wins. Never hijack it into a trade.
+  if i~=o.aiID or Game.GetActivePlayer()~=o.humanID
+     or state~=DiploUIStateTypes.DIPLO_UI_STATE_DEFAULT_ROOT then
+    S("NativeUIHeartbeat","PENDING_CANCELLED_DIPLO_COLLISION")
+    S("NativeUICollisionAI",i or -1)
+    S("NativeUICollisionState",state or -1)
+    pending=nil
+    return
+  end
   local ok,e=pcall(function()
     Players[i]:DoTradeScreenOpened(); UI.OnHumanOpenedTradeScreen(i); Rebuild(UI.GetScratchDeal(),o)
     S("NativeUIHeartbeat","SCRATCH_DEAL_REBUILT")
@@ -385,31 +398,6 @@ local function Finish() if retryRegistered or retryArmed then Unready("READY_SIG
 Events.ActivePlayerTurnStart.Add(Start)
 if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
 
--- A loaded save can enter the InGame context after the active-player turn-start
--- event for the current turn has already fired. Bootstrap once from
--- SequenceGameInitComplete, plus an immediate active-turn fallback if that
--- sequence event already happened before this context registered.
-local bootstrapDone=false
-local function BootstrapScan(source)
-  if bootstrapDone then return end
-  local h=Game.GetActivePlayer()
-  if h==nil or h<0 or not HumanMajor(h) then
-    S("BootstrapScanHeartbeat",tostring(source)..":WAITING_FOR_HUMAN")
-    return
-  end
-  bootstrapDone=true
-  S("BootstrapScanHeartbeat",tostring(source))
-  Start()
-end
-if Events.SequenceGameInitComplete then
-  Events.SequenceGameInitComplete.Add(function() BootstrapScan("SEQUENCE_GAME_INIT_COMPLETE") end)
-end
-pcall(function()
-  local h=Game.GetActivePlayer()
-  if h~=nil and h>=0 and HumanMajor(h) and Players[h]:IsTurnActive() then
-    BootstrapScan("RUNTIME_LOAD_ACTIVE_TURN")
-  end
-end)
 -- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V106_END
 
 S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)

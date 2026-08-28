@@ -23,16 +23,30 @@ try {
         if(Test-LEKPath $p){ Remove-Item -LiteralPath $p -Force }
     }
 
-    # Restore only the one EUI conditional Fair Trades owns.
+    # Remove the direct AI-offer bridge Fair Trades owns in EUI diplotrade.
+    $diploTrade=Join-LEKPath $civ 'Assets\DLC\UI_bc1\bugfixes\diplotrade.lua'
+    if(Test-LEKPath $diploTrade){
+        $dt=[IO.File]::ReadAllText($diploTrade)
+        if($dt.Contains('-- LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_BEGIN')){
+            $dt=Remove-LEKMarkedBlock $dt '-- LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_BEGIN' '-- LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_END'
+            Write-LEKUtf8NoBom $diploTrade $dt
+        }
+    }
+
+    # Restore only the optional EUI luxury conditional Fair Trades owns.
     $tradeLogic=Join-LEKPath $civ 'Assets\DLC\UI_bc1\LeaderHead\TradeLogic.lua'
     if(Test-LEKPath $tradeLogic){
         $tl=[IO.File]::ReadAllText($tradeLogic)
-        $pattern='(?ms)^(?<indent>[ \t]*)-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN\r?\n[ \t]*if AIOfferingLux\(\) and not \(MapModData and MapModData\.LEK_FAIR_TRADES_ALLOW_LUX_OFFER\) then\r?\n[ \t]*-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_END[ \t]*$'
-        $m=[regex]::Match($tl,$pattern)
-        if($m.Success){
-            $indent=$m.Groups['indent'].Value
-            $tl=[regex]::Replace($tl,$pattern,[System.Text.RegularExpressions.MatchEvaluator]{ param($x) $indent+'if AIOfferingLux() then' },1)
-            Write-LEKUtf8NoBom $tradeLogic $tl
+        if($tl.Contains('-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN')){
+            $pattern='(?ms)^(?<indent>[ \t]*)-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_BEGIN\r?\n(?<line>.*?)\r?\n[ \t]*-- LEK_EXT_FAIR_TRADES_EUI_LUX_BRIDGE_END[ \t]*$'
+            $m=[regex]::Match($tl,$pattern)
+            if($m.Success){
+                $indent=$m.Groups['indent'].Value
+                $line=$m.Groups['line'].Value
+                $line=$line -replace ' and szLeaderMessage ~= "I have a trade proposal that I believe is fair to both of us\."',''
+                $tl=[regex]::Replace($tl,$pattern,[System.Text.RegularExpressions.MatchEvaluator]{ param($x) $indent+$line.TrimStart() },1)
+                Write-LEKUtf8NoBom $tradeLogic $tl
+            }
         }
     }
 

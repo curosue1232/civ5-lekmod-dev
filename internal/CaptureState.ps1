@@ -43,15 +43,19 @@ try {
     $lekUI=Join-LEKPath $civ 'Assets\DLC\LEKMOD_V30.7\UI'
     $inGame=Join-LEKPath $lekUI 'InGame.lua'
     $leader=Get-LEKLeaderRoot $civ
-    $mpSetup=Join-LEKPath $civ 'Assets\UI\FrontEnd\Multiplayer\GameSetup\MPGameSetupScreen.lua'
+    $multi=Join-LEKPath $civ 'Assets\UI\FrontEnd\Multiplayer'
+    $mpSetup=Join-LEKPath $multi 'GameSetup\MPGameSetupScreen.lua'
     $euiLoad=Join-LEKPath $civ 'Assets\DLC\UI_bc1\GameSetup\LoadScreen.lua'
-    $staging=Join-LEKPath $civ 'Assets\UI\FrontEnd\Multiplayer\StagingRoom.lua'
+    $staging=Join-LEKPath $multi 'StagingRoom.lua'
+    $gtasStart=Join-LEKPath $multi 'GTAS_StartGame.lua'
+    $gtasInitMap=Join-LEKPath $multi 'GTAS_InitMap.lua'
+    $gtasPlaceWonders=Join-LEKPath $multi 'GTAS_PlaceWonders.lua'
 
     $lines=New-Object System.Collections.ArrayList
     [void]$lines.Add('LEK DEVELOPMENT STATE SNAPSHOT')
     [void]$lines.Add(('Created: '+(Get-Date).ToString('s')))
     [void]$lines.Add(('CivPath: '+$civ))
-    [void]$lines.Add('Workspace: frozen Core v1.3 + clean extension architecture')
+    [void]$lines.Add('Workspace: frozen Core v1.3 + isolated development extensions')
     [void]$lines.Add('')
 
     Add-FileSummary $lines 'Lekmod InGame.lua' $inGame
@@ -59,6 +63,9 @@ try {
     Add-FileSummary $lines 'MPGameSetupScreen.lua' $mpSetup
     Add-FileSummary $lines 'EUI LoadScreen.lua' $euiLoad
     Add-FileSummary $lines 'StagingRoom.lua' $staging
+    Add-FileSummary $lines 'GTAS_StartGame.lua' $gtasStart
+    Add-FileSummary $lines 'GTAS_InitMap.lua' $gtasInitMap
+    Add-FileSummary $lines 'GTAS_PlaceWonders.lua' $gtasPlaceWonders
 
     [IO.File]::WriteAllLines((Join-Path $work 'SUMMARY.txt'),[string[]]$lines,(New-Object Text.UTF8Encoding($false)))
 
@@ -67,8 +74,10 @@ try {
     Copy-Safe $mpSetup (Join-Path $work 'RAS\MPGameSetupScreen.lua')
     Copy-Safe $euiLoad (Join-Path $work 'RAS\LoadScreen.lua')
     Copy-Safe $staging (Join-Path $work 'RAS\StagingRoom.lua')
+    Copy-Safe $gtasStart (Join-Path $work 'RAS\GTAS_StartGame.lua')
+    Copy-Safe $gtasInitMap (Join-Path $work 'RAS\GTAS_InitMap.lua')
+    Copy-Safe $gtasPlaceWonders (Join-Path $work 'RAS\GTAS_PlaceWonders.lua')
 
-    # Fair Trades owned files.
     if(Test-LEKPath $lekUI -Container){
         foreach($f in @(Get-ChildItem -LiteralPath $lekUI -File -ErrorAction SilentlyContinue)){
             if($f.Name -match '^LEK(?:MP)?FairTrades.*\.(lua|xml)$'){
@@ -77,24 +86,11 @@ try {
         }
     }
 
-    # RAS scripts: collect only the exact small set we routinely need.
-    $rasNames=@('GTAS_StartGame.lua','GTAS_MP_Bridge.lua','GTAS_MP_DB_Bootstrap.lua','GTAS_Constants.lua','GTAS_Utilities.lua')
-    $rasRoot=Join-LEKPath $civ 'Assets\DLC\LEKMOD_V30.7'
-    if(Test-LEKPath $rasRoot -Container){
-        foreach($n in $rasNames){
-            try {
-                $hits=@(Get-ChildItem -LiteralPath $rasRoot -Recurse -File -Filter $n -ErrorAction SilentlyContinue | Select-Object -First 3)
-                $i=0
-                foreach($h in $hits){
-                    $i++
-                    $destName=($n -replace '\.lua$',('_{0}.lua' -f $i))
-                    Copy-Safe $h.FullName (Join-Path $work ('RAS\'+$destName))
-                }
-            } catch {}
-        }
+    # Bridge support files copied to FrontEnd\Multiplayer by the RAS MP bridge.
+    foreach($n in @('GTAS_MP_Bridge.lua','GTAS_MP_DB_Bootstrap.lua','GTAS_Constants.lua','GTAS_Utilities.lua')){
+        Copy-Safe (Join-LEKPath $multi $n) (Join-Path $work ('RAS\'+$n))
     }
 
-    # All relevant InGame.lua variants are small and useful for load-order checks.
     $igCandidates=@(
         (Join-LEKPath $civ 'Assets\UI\InGame\InGame.lua'),
         (Join-LEKPath $civ 'Assets\DLC\Expansion\UI\InGame\InGame.lua'),
@@ -109,7 +105,6 @@ try {
         }
     }
 
-    # UserData DBs for Fair Trades, RAS bridge, and reroll state.
     $userRoots=@(
         (Join-LEKPath $env:USERPROFILE 'Documents\My Games\Sid Meier''s Civilization 5'),
         (Join-LEKPath $env:USERPROFILE 'OneDrive\Documents\My Games\Sid Meier''s Civilization 5')
@@ -126,7 +121,6 @@ try {
         }
     }
 
-    # Useful logs. Tail large logs to keep the diagnostic small.
     $logRoots=@(
         (Join-LEKPath $env:USERPROFILE 'Documents\My Games\Sid Meier''s Civilization 5\Logs'),
         (Join-LEKPath $env:USERPROFILE 'OneDrive\Documents\My Games\Sid Meier''s Civilization 5\Logs')
@@ -143,7 +137,6 @@ try {
         }
     }
 
-    # Workspace source versions/hashes make it obvious which local payload created the state.
     foreach($src in @('internal\fair\UI\LEKFairTrades.lua','internal\fair\UI\LEKFairTrades.xml','PROJECT_STATE.md')){
         $p=Join-Path $Root $src
         if(Test-LEKPath $p){ Copy-Safe $p (Join-Path $work ('SOURCE_'+([IO.Path]::GetFileName($p)))) }
@@ -157,7 +150,7 @@ try {
     Write-Host ''
     Write-Host 'ONE development snapshot created:' -ForegroundColor Green
     Write-Host $zip -ForegroundColor Green
-    Write-Host 'Upload only that ZIP for normal debugging. It includes Fair Trades + RAS/reroll context.' -ForegroundColor Cyan
+    Write-Host 'Upload only that ZIP for normal debugging. It includes Fair Trades + RAS/reroll/wonder context.' -ForegroundColor Cyan
     exit 0
 } catch {
     Write-Host ('STATE CAPTURE ERROR: '+$_.Exception.Message) -ForegroundColor Red

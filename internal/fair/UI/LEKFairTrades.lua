@@ -1,18 +1,20 @@
--- LEKMOD 30.7 Fair Trades v1.1.4e2 PROVEN AI-OFFER HANDOFF HOTFIX
--- Search and native-value all exact luxury / Gold / GPT candidates before opening any AI trade session.
--- Once a candidate is validated, use the proven v1.0.8 handoff with no probes between/open after UI transition.
+-- LEKMOD 30.7 Fair Trades v1.1.5 EUI DIRECT OFFER BRIDGE
+-- Search/value exact Luxury / Gold / GPT candidates before opening the AI trade session.
+-- The visible offer is handed directly to EUI TradeLogic through a private LuaEvents bridge.
+-- No UI.OnHumanOpenedTradeScreen and no spoofed Events.AILeaderMessage call.
 
-print("LEK Fair Trades v1.1.4e2 PROVEN AI-OFFER HANDOFF HOTFIX: loading")
+print("LEK Fair Trades v1.1.5 EUI DIRECT OFFER BRIDGE: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
-local VERSION=114
+local VERSION=115
 local DB_VERSION=1
 local MIN_OFFER_GAP=2
 local MAX_EVALS=8
 local SEARCH_EVAL_LIMIT=MAX_EVALS
+local FAIR_MESSAGE="I have a trade proposal that I believe is fair to both of us."
 
--- LEK_FAIR_TRADES_DIRECT_VALUE_V114
+-- LEK_FAIR_TRADES_EUI_DIRECT_OFFER_V115
 if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
 MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION=VERSION
 
@@ -27,18 +29,17 @@ local function Reason(r)
   S("OfferScanTurn",t); S("OfferScanHuman",h)
 end
 
-S("RuntimePatch","V114_DIRECT_NATIVE_VALUE_NO_TRADE_HELPERS")
-S("RuntimeHotfix","V114E_NO_POST_UI_NATIVE_VALUE")
-S("HandoffHotfix","V114E2_PRESESSION_SEARCH_TIGHT_AI_OFFER_HANDOFF")
-S("OfferEngine","ONE_AI_PRESESSION_SEARCH_DIRECT_NATIVE_VALUE_V114E2")
-S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V114")
+S("RuntimePatch","V115_EUI_DIRECT_OFFER_BRIDGE")
+S("RuntimeHotfix","V115_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT")
+S("OfferEngine","ONE_AI_PRESESSION_SEARCH_EUI_DIRECT_OFFER_V115")
+S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V115")
 S("StrategicResources","NEVER")
 S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
 S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
-S("TradeSessionPolicy","PRESESSION_SEARCH_THEN_TIGHT_AI_OFFER_HANDOFF")
+S("TradeSessionPolicy","PRESESSION_SEARCH_THEN_BACKEND_OPEN_DIRECT_EUI_HANDLER")
 S("NativeHelperPolicy","NONE_NO_DOWHATWILLGIVE_NO_DOWHATWANT_NO_EQUALIZE")
-S("ScratchDealPolicy","DIRECT_BUILD_VALIDATE_SHOW_SAME_SCRATCH")
-S("DeferredUIPolicy","PRESESSION_VALIDATE_THEN_OPEN_UI_DIRECT_REBUILD_NO_POST_OPEN_PROBES")
+S("ScratchDealPolicy","DIRECT_BUILD_VALIDATE_REBUILD_THEN_EUI_HANDLER")
+S("EUIBridgePolicy","NO_ONHUMANOPENED_NO_FAKE_AILEADERMESSAGE")
 S("NativeEvalBudget",MAX_EVALS)
 S("SearchNativeEvalBudget",SEARCH_EVAL_LIMIT)
 
@@ -117,6 +118,7 @@ local function SpareLux(from,to)
   table.sort(a)
   return a
 end
+
 local function Prep(d,h,ai)
   d:ClearItems(); d:SetFromPlayer(h); d:SetToPlayer(ai)
 end
@@ -339,8 +341,8 @@ local function FindOneAI(h,turn)
   return nil,"NO_DUE_AI_WITH_SPARE_LUXURY"
 end
 
--- Rebuild only an already-validated candidate after the UI transition.
--- Deliberately performs no IsPossibleToTradeItem or native value calls.
+-- Rebuild only an already-validated candidate after the backend AI session opens.
+-- Deliberately performs no IsPossibleToTradeItem and no native valuation calls.
 local function RebuildCandidate(d,c,h,ai)
   Prep(d,h,ai)
   if c.kind=="SWAP" then
@@ -365,14 +367,18 @@ local function ShowOneOffer(seed,h,turn)
   if Game.GetActivePlayer()~=h or not Players[h]:IsTurnActive() then return false,"HUMAN_TURN_NOT_ACTIVE" end
   if Game.IsProcessingMessages and Game.IsProcessingMessages() then return false,"MESSAGE_QUEUE_BUSY" end
   if UI.GetLeaderHeadRootUp then local ok,up=pcall(UI.GetLeaderHeadRootUp); if ok and up then return false,"LEADER_SCREEN_ALREADY_OPEN" end end
+  if not (MapModData and MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_READY) then
+    S("EUIBridgeReady",0)
+    return false,"EUI_OFFER_BRIDGE_NOT_READY"
+  end
+  S("EUIBridgeReady",1)
+
   local hl,al=SpareLux(h,ai),SpareLux(ai,h)
   if #hl==0 and #al==0 then return false,"NO_LONGER_HAS_SPARE_LUXURY" end
 
   evals=0; S("OfferNativeEvals",0); S("NativeUIHeartbeat","PRESESSION_SEARCH_BEGIN")
-  S("DisplayValidation","NOT_REACHED")
-  S("NativeUIErrorUIOpened",0)
+  S("EUIBridgeDispatch","NOT_REACHED")
   local backendOpened=false
-  local uiOpened=false
   local candidate=nil
   local failWhy="NO_DIRECT_NATIVE_VALUE_DEAL"
   local ok,e=pcall(function()
@@ -386,27 +392,28 @@ local function ShowOneOffer(seed,h,turn)
     S("NativeUIHeartbeat","VALID_CANDIDATE_PRESESSION")
     S("LastCandidateShape",candidate.shape or "")
 
-    -- Proven v1.0.8 handoff: once the candidate exists, open the native AI
-    -- trade session and human trade UI back-to-back. Do no candidate search,
-    -- value calls, or possibility probes while this session is open.
+    -- Open only the backend AI negotiation role. Do not use the human-opened
+    -- trade entry point; EUI's own LeaderMessageHandler will open/render the UI.
     Players[ai]:DoTradeScreenOpened()
     backendOpened=true
-    UI.OnHumanOpenedTradeScreen(ai)
-    uiOpened=true
 
     local built,buildWhy=RebuildCandidate(d,candidate,h,ai)
     if not built then error(buildWhy) end
-    S("DisplayValidation","DIRECT_REBUILD_NO_POST_OPEN_PROBES")
+    S("DisplayValidation","DIRECT_REBUILD_BEFORE_EUI_HANDLER")
 
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_AI=-1
+    S("EUIBridgeDispatch","CALLING")
+    LuaEvents.LEKFairTradesAIOffer(ai,FAIR_MESSAGE)
+    if MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_AI~=ai then
+      error("EUI_OFFER_BRIDGE_NOT_HANDLED")
+    end
+    S("EUIBridgeDispatch","HANDLED")
+    S("EUIBridgeHandledAI",ai)
     S("LastShownAI",ai); S("LastShownTurn",Game.GetGameTurn()); S("LastShownShape",candidate.shape or "")
-    S("NativeUIHeartbeat","AI_OFFER_HANDOFF_READY")
-    Events.AILeaderMessage(ai,DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER,
-      "I have a trade proposal that I believe is fair to both of us.",-1,0)
+    S("NativeUIHeartbeat","EUI_AI_OFFER_HANDLER_CONFIRMED")
   end)
   if not ok then
     S("NativeUIHeartbeat","ONE_SESSION_ERROR"); S("NativeUIError",tostring(e))
-    S("NativeUIErrorUIOpened",uiOpened and 1 or 0)
-    if uiOpened then S("DisplayValidation","ERROR_AFTER_UI_OPEN") end
     if backendOpened then CloseSession(ai) end
     return false,tostring(e)
   end
@@ -415,7 +422,6 @@ local function ShowOneOffer(seed,h,turn)
     S("NativeUIHeartbeat","PRESESSION_NO_DEAL_NO_UI")
     return false,failWhy
   end
-  if not uiOpened then if backendOpened then CloseSession(ai) end; return false,"VALID_CANDIDATE_UI_NOT_OPENED" end
   S("NativeUIHeartbeat","ONE_SESSION_OFFER_SENT")
   return true,"OK"
 end
@@ -436,8 +442,8 @@ local function Scan()
   local seed,why=FindOneAI(h,turn)
   if not seed then Reason(why); return end
   local shown,showWhy=ShowOneOffer(seed,h,turn)
-  if shown then lastShownTurn=turn; Reason("PRESESSION_SEARCH_AI_OFFER_SENT")
-  else S("LastShowReject",showWhy or ""); Reason("ONE_SELECTED_AI_NO_PRESESSION_DIRECT_DEAL") end
+  if shown then lastShownTurn=turn; Reason("EUI_DIRECT_AI_OFFER_SENT")
+  else S("LastShowReject",showWhy or ""); Reason("ONE_SELECTED_AI_NO_EUI_DIRECT_DEAL") end
 end
 
 local Ready
@@ -464,6 +470,6 @@ local function Finish() if retryRegistered or retryArmed then RemoveRetry() end 
 Events.ActivePlayerTurnStart.Add(Start)
 if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
 S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)
-S("PerformanceModel","MAX_8_PRESESSION_NATIVE_VALUE_CALLS_TIGHT_AI_OFFER_HANDOFF_NO_POST_OPEN_PROBES")
+S("PerformanceModel","ONE_AI_PRESESSION_MAX_8_NATIVE_VALUE_CALLS_DIRECT_EUI_HANDLER")
 S("RelationshipModel","GUARDED_5_NEUTRAL_3_FRIENDLY_AFRAID_2")
-print("LEK Fair Trades v1.1.4e2 PROVEN AI-OFFER HANDOFF HOTFIX: ready")
+print("LEK Fair Trades v1.1.5 EUI DIRECT OFFER BRIDGE: ready")

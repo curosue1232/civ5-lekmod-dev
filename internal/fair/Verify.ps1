@@ -5,7 +5,7 @@ function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -For
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.3 ONE-SESSION NATIVE VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.1.4 DIRECT NATIVE VALUE VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -34,29 +34,29 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 113' $t.Contains('local VERSION=113')
-        Check 'v1.1.3 one-session marker' $t.Contains('-- LEK_FAIR_TRADES_ONE_SESSION_NATIVE_V113')
-        Check 'one-session runtime patch' $t.Contains('V113_ONE_SESSION_NATIVE_HELPER')
-        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V113')
+        Check 'runtime version 114' $t.Contains('local VERSION=114')
+        Check 'v1.1.4 direct-value marker' $t.Contains('-- LEK_FAIR_TRADES_DIRECT_VALUE_V114')
+        Check 'direct-value runtime patch' $t.Contains('V114_DIRECT_NATIVE_VALUE_NO_TRADE_HELPERS')
+        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V114')
         Check 'currency offers both ways' $t.Contains('LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS')
         Check 'both sides preserve last copy' $t.Contains('BOTH_SIDES_PRESERVE_LAST_COPY')
         Check 'spare luxury requires two copies' $t.Contains('GetNumResourceAvailable(r.ID,true) or 0)>=2')
-        Check 'last-copy helper result rejected' $t.Contains('NATIVE_HELPER_USED_LAST_LUXURY')
-        Check 'native give helper' $t.Contains('UI.DoWhatWillAIGive')
-        Check 'native want helper' $t.Contains('UI.DoWhatDoesAIWant')
-        Check 'native equalizer fallback' $t.Contains('UI.DoEqualizeDealWithHuman')
-        Check 'helpers bounded to three tries' $t.Contains('local MAX_HELPER_TRIES=3')
-        Check 'flat Gold result validation' $t.Contains('TRADE_ITEM_GOLD')
-        Check 'GPT result validation' $t.Contains('TRADE_ITEM_GOLD_PER_TURN')
+        Check 'flat Gold inserted directly' ($t.Contains('TRADE_ITEM_GOLD') -and $t.Contains('AddGoldTrade'))
+        Check 'GPT inserted directly' ($t.Contains('TRADE_ITEM_GOLD_PER_TURN') -and $t.Contains('AddGoldPerTurnTrade'))
+        Check 'native same-side value APIs used' ($t.Contains('GetDealMyValue') -and $t.Contains('GetDealTheyreValue'))
+        Check 'native fairness checks both players' $t.Contains('v.aiThey>=v.aiMy and v.hThey>=v.hMy')
+        Check '8-evaluation ceiling' $t.Contains('local MAX_EVALS=8')
         Check 'human luxury for AI Gold shape' $t.Contains('HUMAN_LUX_FOR_AI_GOLD')
         Check 'human luxury for AI GPT shape' $t.Contains('HUMAN_LUX_FOR_AI_GPT')
         Check 'AI luxury for human Gold shape' $t.Contains('AI_LUX_FOR_HUMAN_GOLD')
         Check 'AI luxury for human GPT shape' $t.Contains('AI_LUX_FOR_HUMAN_GPT')
-        Check 'no custom native value math' (-not ($t.Contains('GetDealMyValue') -or $t.Contains('GetDealTheyreValue') -or $t.Contains('MAX_EVALS')))
-        Check 'no custom currency insertion' (-not ($t.Contains('AddGoldTrade') -or $t.Contains('AddGoldPerTurnTrade')))
+        Check 'no DoWhatWillAIGive helper' (-not $t.Contains('UI.DoWhatWillAIGive'))
+        Check 'no DoWhatDoesAIWant helper' (-not $t.Contains('UI.DoWhatDoesAIWant'))
+        Check 'no equalizer helper' (-not $t.Contains('UI.DoEqualizeDealWithHuman'))
+        Check 'no native deal iterator/snapshot needed' (-not ($t.Contains('GetNextItem') -or $t.Contains('local function Snapshot')))
         Check 'one trade-session open call in runtime' ([regex]::Matches($t,'DoTradeScreenOpened\(\)').Count -eq 1)
         Check 'one human-opened trade call in runtime' ([regex]::Matches($t,'UI\.OnHumanOpenedTradeScreen').Count -eq 1)
-        Check 'native scratch shown in place' $t.Contains('NO_SNAPSHOT_REBUILD_SHOW_NATIVE_SCRATCH_IN_PLACE')
+        Check 'direct scratch policy' $t.Contains('DIRECT_BUILD_VALIDATE_SHOW_SAME_SCRATCH')
         Check 'unique Fair Trades offer message' $t.Contains('I have a trade proposal that I believe is fair to both of us.')
         Check 'native AI offer state' $t.Contains('DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER')
         Check 'no DoBeginDiploWithHuman' (-not $t.Contains('DoBeginDiploWithHuman'))
@@ -105,7 +105,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.1.3 ONE-SESSION NATIVE VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.1.4 DIRECT NATIVE VALUE VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

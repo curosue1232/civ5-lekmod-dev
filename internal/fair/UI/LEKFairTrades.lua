@@ -1,20 +1,20 @@
--- LEKMOD 30.7 Fair Trades v1.1.6 MULTI-AI PRESESSION SEARCH
+-- LEKMOD 30.7 Fair Trades v1.1.7 CANONICAL CURRENCY LEGALITY
 -- Search/value exact Luxury / Gold / GPT candidates before opening the AI trade session.
 -- The visible offer is handed directly to EUI TradeLogic through a private LuaEvents bridge.
 -- No UI.OnHumanOpenedTradeScreen and no spoofed Events.AILeaderMessage call.
 
-print("LEK Fair Trades v1.1.6 MULTI-AI PRESESSION SEARCH: loading")
+print("LEK Fair Trades v1.1.7 CANONICAL CURRENCY LEGALITY: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
-local VERSION=116
+local VERSION=117
 local DB_VERSION=1
 local MIN_OFFER_GAP=2
 local MAX_EVALS=8
 local SEARCH_EVAL_LIMIT=MAX_EVALS
 local FAIR_MESSAGE="I have a trade proposal that I believe is fair to both of us."
 
--- LEK_FAIR_TRADES_MULTI_AI_PRESESSION_V116
+-- LEK_FAIR_TRADES_CANONICAL_CURRENCY_LEGALITY_V117
 if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
 MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION=VERSION
 
@@ -29,10 +29,10 @@ local function Reason(r)
   S("OfferScanTurn",t); S("OfferScanHuman",h)
 end
 
-S("RuntimePatch","V116_MULTI_AI_PRESESSION_SEARCH")
-S("RuntimeHotfix","V116_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT")
-S("OfferEngine","MULTI_AI_SHARED_BUDGET_EUI_DIRECT_OFFER_V116")
-S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V116")
+S("RuntimePatch","V117_CANONICAL_CURRENCY_LEGALITY")
+S("RuntimeHotfix","V117_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT")
+S("OfferEngine","MULTI_AI_SHARED_BUDGET_EUI_DIRECT_OFFER_V117")
+S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V117")
 S("StrategicResources","NEVER")
 S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
 S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
@@ -123,7 +123,12 @@ local function Prep(d,h,ai)
   d:ClearItems(); d:SetFromPlayer(h); d:SetToPlayer(ai)
 end
 local function Possible(d,from,to,item,a,b)
-  local ok,v=pcall(function() return d:IsPossibleToTradeItem(from,to,item,a or 0,b or 0) end)
+  local ok,v
+  if b==nil then
+    ok,v=pcall(function() return d:IsPossibleToTradeItem(from,to,item,a or 0) end)
+  else
+    ok,v=pcall(function() return d:IsPossibleToTradeItem(from,to,item,a or 0,b) end)
+  end
   return ok and v==true
 end
 local function AddLux(d,from,to,res)
@@ -138,14 +143,14 @@ local function AddGold(d,from,to,amount)
   amount=math.floor(amount or 0)
   local p=Players[from]
   if amount<=0 or not p or not p.GetGold or (p:GetGold() or 0)<amount then return false end
-  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD,amount,0) then return false end
+  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD,amount) then return false end
   d:AddGoldTrade(from,amount)
   return true
 end
 local function AddGPT(d,from,to,amount)
   amount=math.floor(amount or 0)
   if amount<=0 then return false end
-  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD_PER_TURN,amount,0) then return false end
+  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD_PER_TURN,amount,Duration()) then return false end
   d:AddGoldPerTurnTrade(from,amount,Duration())
   return true
 end
@@ -481,4 +486,4 @@ if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
 S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)
 S("PerformanceModel","MULTI_AI_SHARED_PRESESSION_MAX_8_NATIVE_VALUE_CALLS_DIRECT_EUI_HANDLER")
 S("RelationshipModel","GUARDED_5_NEUTRAL_3_FRIENDLY_AFRAID_2")
-print("LEK Fair Trades v1.1.6 MULTI-AI PRESESSION SEARCH: ready")
+print("LEK Fair Trades v1.1.7 CANONICAL CURRENCY LEGALITY: ready")

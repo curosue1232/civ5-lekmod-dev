@@ -1,704 +1,385 @@
--- LEKMOD 30.7 Fair Trades v1.0.5
--- Clean extension runtime for the frozen LEK Core v1.3 stack.
---
--- Architecture:
---   * One hidden context loaded by one stable InGame.lua loader block.
---   * No EUI file patch in v1.0.
---   * One authoritative scan at ActivePlayerTurnStart.
---   * No ContextPtr:SetUpdate. GameDataDirty is used only as a transient turn-ready wake signal.
---   * Native Civ V deal AI constructs the counter-price through
---       UI.DoWhatWillAIGive / UI.DoWhatDoesAIWant.
---   * Hard single-digit native-helper budget per human turn.
---   * Generated proactive offers are limited to luxury / gold / GPT in v1.0.
---   * Strategic resources are never accepted into a generated offer.
---   * Final simple-value gate guarantees AI-gives >= human-gives.
---   * Relationship affects proactive frequency, not the AI's native price.
+-- LEKMOD 30.7 Fair Trades v1.0.6
+-- Silent native-value proactive trade engine for frozen LEK Core v1.3.
+-- No per-frame scanner. No headless UI deal-helper calls. No strategic resources.
 
-print("LEK Fair Trades v1.0.5: loading")
--- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V105
--- Event-driven runtime. The context can remain hidden because Civ V still sends
--- registered events to it. No per-frame update handler is used in v1.0.5.
+print("LEK Fair Trades v1.0.6: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
-local RUNTIME_VERSION = 105
-local STATE_SCHEMA_VERSION = 1
-local MAX_NATIVE_HELPER_CALLS_PER_TURN = 8
-local MAX_LUXURY_SEEDS_PER_SIDE = 2
-local MIN_TURNS_BETWEEN_LOCAL_OFFERS = 2
-local LUXURY_SIMPLE_VALUE = 240
+local VERSION=106
+local DB_VERSION=1
+local MAX_EVALS=8
+local MAX_SEEDS=2
+local MIN_OFFER_GAP=2
+local ONE_GPT_VALUE=25
 
-if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION == RUNTIME_VERSION then
-    return
-end
-MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION = RUNTIME_VERSION
+if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
+MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION=VERSION
 
-local g_lastScanTurn = -99999
-local g_lastScanHuman = -1
-local g_lastShownTurn = -99999
-local g_pendingOffer = nil
-local g_nativeCalls = 0
-local g_retryArmed = false
-local g_retryRegistered = false
-local g_retryTurn = -1
-local g_retryHuman = -1
-local g_retrySignals = 0
+local db=nil
+pcall(function() db=Modding.OpenUserData("LEK_FAIR_TRADES",DB_VERSION) end)
+local function S(k,v) if db then pcall(function() db.SetValue(k,v) end) end end
 
-local STATE_DB = nil
-pcall(function()
-    STATE_DB = Modding.OpenUserData("LEK_FAIR_TRADES", STATE_SCHEMA_VERSION)
-end)
-
-local function StateSet(key, value)
-    if STATE_DB == nil then return end
-    pcall(function() STATE_DB.SetValue(key, value) end)
+local trail={}
+local function Reason(r)
+  S("OfferScanReason",r)
+  local t,h=-1,-1
+  pcall(function() t=Game.GetGameTurn() end)
+  pcall(function() h=Game.GetActivePlayer() end)
+  table.insert(trail,tostring(t)..":"..tostring(h)..":"..tostring(r))
+  while #trail>16 do table.remove(trail,1) end
+  S("OfferScanTrail",table.concat(trail," | "))
 end
 
-local g_scanTrail = {}
+local lastScanTurn,lastScanHuman,lastShownTurn=-99999,-1,-99999
+local pending=nil
+local evals=0
+local retryArmed,retryRegistered=false,false
+local retryTurn,retryHuman,retrySignals=-1,-1,0
 
-local function SetScanReason(reason)
-    StateSet("OfferScanReason", reason)
-    local turn = -1
-    local human = -1
-    pcall(function() turn = Game.GetGameTurn() end)
-    pcall(function() human = Game.GetActivePlayer() end)
-    table.insert(g_scanTrail, tostring(turn) .. ":" .. tostring(human) .. ":" .. tostring(reason))
-    while #g_scanTrail > 16 do
-        table.remove(g_scanTrail, 1)
-    end
-    StateSet("OfferScanTrail", table.concat(g_scanTrail, " | "))
+local function Duration()
+  local d=Game.GetDealDuration()
+  if not d or d<=0 then d=30 end
+  return d
+end
+local function HumanMajor(id)
+  local p=Players[id]
+  return p and p:IsAlive() and p:IsHuman() and not p:IsMinorCiv() and not p:IsBarbarian()
+end
+local function AIMajor(id)
+  local p=Players[id]
+  return p and p:IsAlive() and not p:IsHuman() and not p:IsMinorCiv() and not p:IsBarbarian()
+end
+local function Luxury(id)
+  return id~=nil and Game.GetResourceUsageType(id)==ResourceUsageTypes.RESOURCEUSAGE_LUXURY
+end
+local function Hash(x)
+  x=tostring(x or "")
+  local h=104729
+  for i=1,#x do h=(h*131+string.byte(x,i))%2147483629 end
+  return h
 end
 
-local function DealDuration()
-    local d = Game.GetDealDuration()
-    if d == nil or d <= 0 then d = 30 end
-    return d
+local function Approach(ai,h)
+  local p=Players[ai]
+  if p and p.GetMajorCivApproach then
+    local ok,v=pcall(function() return p:GetMajorCivApproach(h) end)
+    if ok and v~=nil then return v end
+  end
+  return MajorCivApproachTypes.MAJOR_CIV_APPROACH_NEUTRAL
 end
-
-local function IsLivingHumanMajor(playerID)
-    local p = Players[playerID]
-    return p ~= nil and p:IsAlive() and p:IsHuman() and not p:IsMinorCiv() and not p:IsBarbarian()
-end
-
-local function IsLivingAIMajor(playerID)
-    local p = Players[playerID]
-    return p ~= nil and p:IsAlive() and not p:IsHuman() and not p:IsMinorCiv() and not p:IsBarbarian()
-end
-
-local function IsLuxury(resourceID)
-    return resourceID ~= nil and Game.GetResourceUsageType(resourceID) == ResourceUsageTypes.RESOURCEUSAGE_LUXURY
-end
-
-local function HashString(text)
-    local h = 104729
-    text = tostring(text or "")
-    for i = 1, #text do
-        h = (h * 131 + string.byte(text, i)) % 2147483629
-    end
-    return h
-end
-
-local function CurrentApproach(aiID, humanID)
-    local ai = Players[aiID]
-    if ai ~= nil and ai.GetMajorCivApproach ~= nil then
-        local ok, v = pcall(function() return ai:GetMajorCivApproach(humanID) end)
-        if ok and v ~= nil then return v end
-    end
-    return MajorCivApproachTypes.MAJOR_CIV_APPROACH_NEUTRAL
-end
-
 local function ApproachName(a)
-    if a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_WAR then return "WAR" end
-    if a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_HOSTILE then return "HOSTILE" end
-    if a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_DECEPTIVE then return "DECEPTIVE" end
-    if a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_GUARDED then return "GUARDED" end
-    if a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_AFRAID then return "AFRAID" end
-    if a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_FRIENDLY then return "FRIENDLY" end
-    if a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_NEUTRAL then return "NEUTRAL" end
-    return tostring(a)
+  local T=MajorCivApproachTypes
+  if a==T.MAJOR_CIV_APPROACH_WAR then return "WAR" end
+  if a==T.MAJOR_CIV_APPROACH_HOSTILE then return "HOSTILE" end
+  if a==T.MAJOR_CIV_APPROACH_DECEPTIVE then return "DECEPTIVE" end
+  if a==T.MAJOR_CIV_APPROACH_GUARDED then return "GUARDED" end
+  if a==T.MAJOR_CIV_APPROACH_AFRAID then return "AFRAID" end
+  if a==T.MAJOR_CIV_APPROACH_FRIENDLY then return "FRIENDLY" end
+  if a==T.MAJOR_CIV_APPROACH_NEUTRAL then return "NEUTRAL" end
+  return tostring(a)
+end
+local function Due(ai,h,turn)
+  local a=Approach(ai,h)
+  S("AI_"..ai.."_Approach",ApproachName(a))
+  local T=MajorCivApproachTypes
+  if a==T.MAJOR_CIV_APPROACH_WAR or a==T.MAJOR_CIV_APPROACH_HOSTILE or a==T.MAJOR_CIV_APPROACH_DECEPTIVE then
+    S("AI_"..ai.."_RelationshipDue",0); return false
+  end
+  local n=(a==T.MAJOR_CIV_APPROACH_GUARDED and 5)
+       or (a==T.MAJOR_CIV_APPROACH_NEUTRAL and 3)
+       or ((a==T.MAJOR_CIV_APPROACH_FRIENDLY or a==T.MAJOR_CIV_APPROACH_AFRAID) and 2)
+       or 4
+  S("AI_"..ai.."_RelationshipInterval",n)
+  local yes=((turn+(Hash(ai.."|"..h.."|REL")%n))%n)==0
+  S("AI_"..ai.."_RelationshipDue",yes and 1 or 0)
+  return yes
 end
 
-local function RelationshipInterval(aiID, humanID)
-    local a = CurrentApproach(aiID, humanID)
-    if a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_WAR
-        or a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_HOSTILE
-        or a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_DECEPTIVE then
-        return nil, a
-    end
-    if a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_GUARDED then return 5, a end
-    if a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_NEUTRAL then return 3, a end
-    if a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_FRIENDLY
-        or a == MajorCivApproachTypes.MAJOR_CIV_APPROACH_AFRAID then return 2, a end
-    return 4, a
+local function CanTrade(ai,h)
+  if not AIMajor(ai) or not HumanMajor(h) then return false end
+  local ap,hp=Players[ai],Players[h]
+  local team=Teams[ap:GetTeam()]
+  if not team:IsHasMet(hp:GetTeam()) or team:IsAtWar(hp:GetTeam()) then return false end
+  if ap.IsTradeSanctioned then
+    local ok,v=pcall(function() return ap:IsTradeSanctioned(h) end)
+    if ok and v then return false end
+  end
+  return true
+end
+local function AIs(h)
+  local a={}
+  for i=0,GameDefines.MAX_MAJOR_CIVS-1 do if CanTrade(i,h) then table.insert(a,i) end end
+  table.sort(a); return a
 end
 
-local function RelationshipOfferDue(aiID, humanID, turn)
-    local interval, approach = RelationshipInterval(aiID, humanID)
-    StateSet("AI_" .. tostring(aiID) .. "_Approach", ApproachName(approach))
-    if interval == nil then
-        StateSet("AI_" .. tostring(aiID) .. "_RelationshipInterval", "BLOCKED")
-        StateSet("AI_" .. tostring(aiID) .. "_RelationshipDue", 0)
-        return false
-    end
-    StateSet("AI_" .. tostring(aiID) .. "_RelationshipInterval", interval)
-    local offset = HashString(tostring(aiID) .. "|" .. tostring(humanID) .. "|REL") % interval
-    local due = ((turn + offset) % interval) == 0
-    StateSet("AI_" .. tostring(aiID) .. "_RelationshipDue", due and 1 or 0)
-    return due
+local function Possible(d,from,to,item,x,y)
+  local ok,v=pcall(function() return d:IsPossibleToTradeItem(from,to,item,x or 0,y or 0) end)
+  return ok and v==true
 end
 
-local function CanAITradeWithHuman(aiID, humanID)
-    if not IsLivingAIMajor(aiID) or not IsLivingHumanMajor(humanID) then return false end
-    local ai = Players[aiID]
-    local human = Players[humanID]
-    local aiTeam = Teams[ai:GetTeam()]
-    local humanTeamID = human:GetTeam()
-    if not aiTeam:IsHasMet(humanTeamID) then return false end
-    if aiTeam:IsAtWar(humanTeamID) then return false end
-    if ai.IsTradeSanctioned ~= nil then
-        local ok, v = pcall(function() return ai:IsTradeSanctioned(humanID) end)
-        if ok and v then return false end
-    end
-    return true
+-- LEK_FAIR_TRADES_INVENTORY_SEED_FIX_V106
+-- Inventory discovery only; legality is checked after the scratch pair is set.
+local function SpareLux(pID,oID)
+  local p,o=Players[pID],Players[oID]
+  local a={}
+  if not p or not o then return a end
+  for r in GameInfo.Resources() do
+    if Luxury(r.ID) and (p:GetNumResourceAvailable(r.ID,true) or 0)>1
+       and (o:GetNumResourceAvailable(r.ID,true) or 0)<=0 then table.insert(a,r.ID) end
+  end
+  table.sort(a); return a
 end
 
-local function EligibleAIs(humanID)
-    local out = {}
-    for i = 0, GameDefines.MAX_MAJOR_CIVS - 1 do
-        if CanAITradeWithHuman(i, humanID) then table.insert(out, i) end
-    end
-    table.sort(out)
-    return out
+local function Prep(d,h,ai) d:ClearItems(); d:SetFromPlayer(h); d:SetToPlayer(ai) end
+
+local function Snapshot(d)
+  local a={}; d:ResetIterator()
+  while true do
+    local x={d:GetNextItem()}; local n=#x
+    if n<1 or x[1]==nil then break end
+    table.insert(a,{itemType=x[1],duration=x[2] or 0,data1=x[4] or 0,data2=x[5] or 0,fromPlayer=x[n]})
+  end
+  return a
 end
 
-local function Possible(deal, fromID, toID, itemType, data1, data2)
-    local ok, v = pcall(function()
-        return deal:IsPossibleToTradeItem(fromID, toID, itemType, data1 or 0, data2 or 0)
-    end)
-    return ok and v == true
+local function Structural(items,ai,h)
+  local ac,hc=0,0
+  if not items or #items==0 then return false,"EMPTY_DEAL" end
+  for _,x in ipairs(items) do
+    if x.fromPlayer~=ai and x.fromPlayer~=h then return false,"THIRD_PARTY_ITEM" end
+    if x.itemType==TradeableItems.TRADE_ITEM_RESOURCES then
+      if not Luxury(x.data1) then return false,"UNSUPPORTED_OR_STRATEGIC_ITEM" end
+      local q=math.max(1,x.data2 or 1)
+      if (Players[x.fromPlayer]:GetNumResourceAvailable(x.data1,true) or 0)<=q then return false,"LAST_LUXURY_COPY" end
+    elseif x.itemType~=TradeableItems.TRADE_ITEM_GOLD and x.itemType~=TradeableItems.TRADE_ITEM_GOLD_PER_TURN then
+      return false,"UNSUPPORTED_OR_STRATEGIC_ITEM"
+    end
+    if x.fromPlayer==ai then ac=ac+1 else hc=hc+1 end
+  end
+  if ac==0 or hc==0 then return false,"ONE_SIDED_DEAL" end
+  return true,"OK"
 end
 
--- LEK_FAIR_TRADES_INVENTORY_SEED_FIX_V105
--- Inventory discovery must not ask IsPossibleToTradeItem before the native
--- scratch deal has been initialized for this AI/human pair. v1.0.4 did that
--- here, which could make every visible duplicate luxury disappear from the
--- seed list. RunNativeSeed performs the authoritative Possible() check after
--- DoTradeScreenOpened + OnHumanOpenedTradeScreen + SetFrom/SetTo.
-local function SpareLuxuries(playerID, otherID)
-    local p = Players[playerID]
-    local other = Players[otherID]
-    local out = {}
-    if p == nil or other == nil then return out end
-    for res in GameInfo.Resources() do
-        local rid = res.ID
-        if IsLuxury(rid) then
-            local ours = p:GetNumResourceAvailable(rid, true) or 0
-            local theirs = other:GetNumResourceAvailable(rid, true) or 0
-            -- Never seed a last copy, and do not seed a luxury the recipient
-            -- already has. Trade legality is checked later in initialized context.
-            if ours > 1 and theirs <= 0 then
-                table.insert(out, rid)
-            end
-        end
-    end
-    table.sort(out)
-    return out
+-- LEK_FAIR_TRADES_SILENT_NATIVE_VALUATION_V106
+-- These methods wrap CvDealAI::GetDealValue side values and do not emit UI.
+local function Values(d,ai,h)
+  if evals>=MAX_EVALS then return nil,"NATIVE_EVAL_BUDGET_EXHAUSTED" end
+  local a,p=Players[ai],Players[h]
+  if not a or not p or not a.GetDealMyValue or not a.GetDealTheyreValue
+     or not p.GetDealMyValue or not p.GetDealTheyreValue then return nil,"NATIVE_SIDE_VALUATION_MISSING" end
+  evals=evals+1
+  local v={}
+  local ok,e=pcall(function()
+    v.aiMy=a:GetDealMyValue(d); v.aiThey=a:GetDealTheyreValue(d)
+    v.hMy=p:GetDealMyValue(d); v.hThey=p:GetDealTheyreValue(d)
+  end)
+  if not ok then return nil,"NATIVE_SIDE_VALUATION_ERROR:"..tostring(e) end
+  for _,n in pairs(v) do if type(n)~="number" or n<0 or n>=999999 then return nil,"NATIVE_SIDE_VALUATION_INVALID" end end
+  return v,"OK"
+end
+local function Accepted(v)
+  if v.aiThey<v.aiMy then return false,"AI_NATIVE_VALUE_GATE" end
+  if v.hThey<v.hMy then return false,"HUMAN_NATIVE_FAIRNESS_GATE" end
+  return true,"OK"
+end
+local function Candidate(d,ai,h,name)
+  local items=Snapshot(d)
+  local ok,why=Structural(items,ai,h); if not ok then return nil,why end
+  local v; v,why=Values(d,ai,h); if not v then return nil,why end
+  S("AI_"..ai.."_LastAIValueMy",v.aiMy); S("AI_"..ai.."_LastAIValueThey",v.aiThey)
+  S("AI_"..ai.."_LastHumanValueMy",v.hMy); S("AI_"..ai.."_LastHumanValueThey",v.hThey)
+  ok,why=Accepted(v); if not ok then return nil,why end
+  return {aiID=ai,humanID=h,items=items,aiGives=v.hThey,humanGives=v.hMy,seed=name},"OK"
 end
 
-local function SnapshotDeal(deal)
-    local out = {}
-    deal:ResetIterator()
-    while true do
-        local raw = { deal:GetNextItem() }
-        local n = #raw
-        if n < 1 or raw[1] == nil then break end
-        table.insert(out, {
-            itemType = raw[1],
-            duration = raw[2] or 0,
-            finalTurn = raw[3] or 0,
-            data1 = raw[4] or 0,
-            data2 = raw[5] or 0,
-            data3 = raw[6] or 0,
-            flag1 = raw[7] or false,
-            fromPlayer = raw[n]
-        })
-    end
-    return out
+local function AddGold(d,from,to,n)
+  n=math.floor(n or 0); local p=Players[from]
+  if n<=0 or not p or not p.GetGold or (p:GetGold() or 0)<n then return false end
+  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD,n,0) then return false end
+  d:AddGoldTrade(from,n); return true
+end
+local function AddGPT(d,from,to,n)
+  n=math.floor(n or 0); if n<=0 then return false end
+  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD_PER_TURN,n,0) then return false end
+  d:AddGoldPerTurnTrade(from,n,Duration()); return true
+end
+local function Seed(d,ai,h,fromHuman,res)
+  Prep(d,h,ai); local from=fromHuman and h or ai; local to=fromHuman and ai or h
+  if not Possible(d,from,to,TradeableItems.TRADE_ITEM_RESOURCES,res,1) then return nil,"SEED_NOT_POSSIBLE" end
+  d:AddResourceTrade(from,res,1,Duration())
+  return Values(d,ai,h)
 end
 
-local function EconomicItemValue(item)
-    if item.itemType == TradeableItems.TRADE_ITEM_GOLD then
-        return math.max(0, item.data1 or 0)
-    elseif item.itemType == TradeableItems.TRADE_ITEM_GOLD_PER_TURN then
-        local duration = item.duration or 0
-        if duration <= 0 then duration = DealDuration() end
-        return math.max(0, item.data1 or 0) * duration
-    elseif item.itemType == TradeableItems.TRADE_ITEM_RESOURCES then
-        if not IsLuxury(item.data1) then return nil end
-        return LUXURY_SIMPLE_VALUE * math.max(1, item.data2 or 1)
-    end
-    return nil
+local function PriceLux(ai,h,fromHuman,res)
+  local d=UI.GetScratchDeal(); local base,why=Seed(d,ai,h,fromHuman,res); if not base then return nil,why end
+  local payer=fromHuman and ai or h; local recv=fromHuman and h or ai
+  local need=fromHuman and base.hMy or base.aiMy
+  local ceiling=fromHuman and base.aiThey or base.hThey
+  S("AI_"..ai.."_LastSeedLuxuryValueMin",need); S("AI_"..ai.."_LastSeedLuxuryValueMax",ceiling)
+  if need<=0 or ceiling<need then return nil,"NO_MUTUALLY_FAIR_PRICE_WINDOW" end
+
+  local function reset()
+    Prep(d,h,ai); local from=fromHuman and h or ai; local to=fromHuman and ai or h
+    if not Possible(d,from,to,TradeableItems.TRADE_ITEM_RESOURCES,res,1) then return false end
+    d:AddResourceTrade(from,res,1,Duration()); return true
+  end
+  local label=fromHuman and "HUMAN_LUX_FOR_AI_" or "AI_LUX_FOR_HUMAN_"
+
+  if evals<MAX_EVALS and reset() and AddGold(d,payer,recv,math.ceil(need)) then
+    local o,r=Candidate(d,ai,h,label.."GOLD"); if o then return o,r else why=r end
+  end
+  if evals<MAX_EVALS and reset() and AddGPT(d,payer,recv,math.max(1,math.ceil(need/ONE_GPT_VALUE))) then
+    local o,r=Candidate(d,ai,h,label.."GPT"); if o then return o,r else why=r end
+  end
+  if evals<MAX_EVALS and reset() then
+    local p=Players[payer]; local gold=math.min(math.floor(need),(p and p.GetGold and (p:GetGold() or 0) or 0))
+    local rem=math.max(0,need-gold); local gpt=rem>0 and math.max(1,math.ceil(rem/ONE_GPT_VALUE)) or 0
+    local added=false
+    if gold>0 then added=AddGold(d,payer,recv,gold) or added end
+    if gpt>0 then added=AddGPT(d,payer,recv,gpt) or added end
+    if added then local o,r=Candidate(d,ai,h,label.."MIXED"); if o then return o,r else why=r end end
+  end
+  return nil,why or "NO_SILENT_NATIVE_PRICE_CANDIDATE"
 end
 
-local function ValidateSnapshot(items, aiID, humanID)
-    local aiGives = 0
-    local humanGives = 0
-    local aiItemCount = 0
-    local humanItemCount = 0
-
-    if items == nil or #items == 0 then return false, "EMPTY_DEAL" end
-
-    for _, item in ipairs(items) do
-        if item.fromPlayer ~= aiID and item.fromPlayer ~= humanID then
-            return false, "THIRD_PARTY_ITEM"
-        end
-        local value = EconomicItemValue(item)
-        if value == nil then
-            return false, "UNSUPPORTED_OR_STRATEGIC_ITEM"
-        end
-
-        if item.itemType == TradeableItems.TRADE_ITEM_RESOURCES then
-            local p = Players[item.fromPlayer]
-            local qty = math.max(1, item.data2 or 1)
-            local available = p and (p:GetNumResourceAvailable(item.data1, true) or 0) or 0
-            if available <= qty then return false, "LAST_LUXURY_COPY" end
-        end
-
-        if item.fromPlayer == aiID then
-            aiGives = aiGives + value
-            aiItemCount = aiItemCount + 1
-        else
-            humanGives = humanGives + value
-            humanItemCount = humanItemCount + 1
-        end
-    end
-
-    if aiItemCount == 0 or humanItemCount == 0 then return false, "ONE_SIDED_DEAL" end
-    if aiGives < humanGives then return false, "HUMAN_FAIRNESS_GATE" end
-    return true, "OK", aiGives, humanGives
+local function Swap(ai,h,hr,ar)
+  local d=UI.GetScratchDeal(); Prep(d,h,ai)
+  if not Possible(d,h,ai,TradeableItems.TRADE_ITEM_RESOURCES,hr,1)
+     or not Possible(d,ai,h,TradeableItems.TRADE_ITEM_RESOURCES,ar,1) then return nil,"LUX_SWAP_NOT_POSSIBLE" end
+  d:AddResourceTrade(h,hr,1,Duration()); d:AddResourceTrade(ai,ar,1,Duration())
+  return Candidate(d,ai,h,"LUXURY_FOR_LUXURY")
 end
 
-local function NativeDealValues(deal, aiID, humanID)
-    local humanValue, aiValue = nil, nil
-    local hp, ap = Players[humanID], Players[aiID]
-    if hp ~= nil and hp.GetDealMyValue ~= nil then
-        local ok, v = pcall(function() return hp:GetDealMyValue(deal) end)
-        if ok then humanValue = v end
-    end
-    if ap ~= nil and ap.GetDealMyValue ~= nil then
-        local ok, v = pcall(function() return ap:GetDealMyValue(deal) end)
-        if ok then aiValue = v end
-    end
-    return humanValue, aiValue
+local function Rebuild(d,o)
+  Prep(d,o.humanID,o.aiID)
+  for _,x in ipairs(o.items) do
+    if x.itemType==TradeableItems.TRADE_ITEM_GOLD then d:AddGoldTrade(x.fromPlayer,x.data1)
+    elseif x.itemType==TradeableItems.TRADE_ITEM_GOLD_PER_TURN then d:AddGoldPerTurnTrade(x.fromPlayer,x.data1,x.duration>0 and x.duration or Duration())
+    elseif x.itemType==TradeableItems.TRADE_ITEM_RESOURCES then d:AddResourceTrade(x.fromPlayer,x.data1,math.max(1,x.data2),x.duration>0 and x.duration or Duration()) end
+  end
 end
 
-local function CloseHeadlessTrade(aiID)
-    local ai = Players[aiID]
-    if ai ~= nil and ai.DoTradeScreenClosed ~= nil then
-        pcall(function() ai:DoTradeScreenClosed(false) end)
-    end
-    if UI.SetOfferTradeRepeatCount ~= nil then pcall(function() UI.SetOfferTradeRepeatCount(0) end) end
+local function Queue(o)
+  if not o or Game.GetActivePlayer()~=o.humanID or not Players[o.humanID]:IsTurnActive() then return false end
+  if Game.IsProcessingMessages and Game.IsProcessingMessages() then return false end
+  if UI.GetLeaderHeadRootUp then local ok,up=pcall(UI.GetLeaderHeadRootUp); if ok and up then return false end end
+  pending=o; S("NativeUIHeartbeat","BEGIN_DIPLO"); S("LastShownAI",o.aiID); S("LastShownTurn",Game.GetGameTurn()); S("LastShownSeed",o.seed)
+  local ok,e=pcall(function() Players[o.aiID]:DoBeginDiploWithHuman() end)
+  if not ok then S("NativeUIHeartbeat","BEGIN_DIPLO_ERROR"); S("NativeUIError",tostring(e)); pending=nil; return false end
+  S("NativeUIHeartbeat","BEGIN_DIPLO_SENT"); return true
 end
 
-local function RunNativeSeed(aiID, humanID, seedFromHuman, resourceID)
-    if g_nativeCalls >= MAX_NATIVE_HELPER_CALLS_PER_TURN then
-        return nil, "HELPER_BUDGET_EXHAUSTED"
+local function OnLeader(i,state,msg,anim,data)
+  local o=pending
+  if not o or i~=o.aiID or Game.GetActivePlayer()~=o.humanID or state~=DiploUIStateTypes.DIPLO_UI_STATE_DEFAULT_ROOT then return end
+  local ok,e=pcall(function()
+    Players[i]:DoTradeScreenOpened(); UI.OnHumanOpenedTradeScreen(i); Rebuild(UI.GetScratchDeal(),o)
+    S("NativeUIHeartbeat","SCRATCH_DEAL_REBUILT")
+    Events.AILeaderMessage(i,DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER,
+      "I have a trade proposal that I believe is fair to both of us.",-1,0)
+    S("NativeUIHeartbeat","AI_OFFER_STATE_SENT")
+  end)
+  if not ok then S("NativeUIHeartbeat","NATIVE_UI_ERROR"); S("NativeUIError",tostring(e)) end
+  pending=nil
+end
+Events.AILeaderMessage.Add(OnLeader)
+
+local function TryAI(ai,h,turn)
+  local hl,al=SpareLux(h,ai),SpareLux(ai,h)
+  S("AI_"..ai.."_HumanLuxCount",#hl); S("AI_"..ai.."_AILuxCount",#al)
+  S("AI_"..ai.."_HumanLuxIDs",table.concat(hl,",")); S("AI_"..ai.."_AILuxIDs",table.concat(al,","))
+  local off=Hash(turn.."|"..ai.."|SEED"); local attempts=0; local why="NO_LUXURY_SEEDS"
+  if #hl>0 and #al>0 and evals<MAX_EVALS then
+    attempts=attempts+1; local o,r=Swap(ai,h,hl[(off%#hl)+1],al[(off%#al)+1]); why=r
+    if o then S("AI_"..ai.."_SeedAttempts",attempts); return o end
+  end
+  local function list(fromHuman,a)
+    local n=math.min(#a,MAX_SEEDS); if n==0 then return nil end
+    local st=(off%#a)+1
+    for k=0,n-1 do
+      if evals>=MAX_EVALS then break end
+      attempts=attempts+1; local idx=((st-1+k)%#a)+1
+      local o,r=PriceLux(ai,h,fromHuman,a[idx]); why=r; S("AI_"..ai.."_LastSeedResult",r)
+      if o then return o end
     end
-    if UI.DoWhatWillAIGive == nil or UI.DoWhatDoesAIWant == nil then
-        return nil, "NATIVE_HELPERS_MISSING"
-    end
-
-    g_nativeCalls = g_nativeCalls + 1
-    local deal = UI.GetScratchDeal()
-    local opened = false
-    local snapshot = nil
-    local reason = "UNKNOWN"
-    local nativeHumanValue, nativeAIValue = nil, nil
-
-    local ok, err = pcall(function()
-        Players[aiID]:DoTradeScreenOpened()
-        UI.OnHumanOpenedTradeScreen(aiID)
-        opened = true
-
-        deal:ClearItems()
-        deal:SetFromPlayer(humanID)
-        deal:SetToPlayer(aiID)
-        local fromID = seedFromHuman and humanID or aiID
-        local toID = seedFromHuman and aiID or humanID
-        if not Possible(deal, fromID, toID, TradeableItems.TRADE_ITEM_RESOURCES, resourceID, 1) then
-            reason = "SEED_NOT_POSSIBLE"
-            return
-        end
-
-        deal:AddResourceTrade(fromID, resourceID, 1, DealDuration())
-        if seedFromHuman then
-            UI.DoWhatWillAIGive()
-        else
-            UI.DoWhatDoesAIWant()
-        end
-        snapshot = SnapshotDeal(deal)
-        nativeHumanValue, nativeAIValue = NativeDealValues(deal, aiID, humanID)
-        reason = "NATIVE_HELPER_RETURNED"
-    end)
-
-    if opened then CloseHeadlessTrade(aiID) end
-    if not ok then
-        return nil, "NATIVE_HELPER_ERROR:" .. tostring(err)
-    end
-    if snapshot == nil then return nil, reason end
-
-    local valid, why, aiGives, humanGives = ValidateSnapshot(snapshot, aiID, humanID)
-    StateSet("AI_" .. tostring(aiID) .. "_LastNativeHumanValue", nativeHumanValue or "NA")
-    StateSet("AI_" .. tostring(aiID) .. "_LastNativeAIValue", nativeAIValue or "NA")
-    StateSet("AI_" .. tostring(aiID) .. "_LastSimpleAIGives", aiGives or -1)
-    StateSet("AI_" .. tostring(aiID) .. "_LastSimpleHumanGives", humanGives or -1)
-    if not valid then return nil, why end
-
-    return {
-        aiID = aiID,
-        humanID = humanID,
-        items = snapshot,
-        aiGives = aiGives,
-        humanGives = humanGives,
-        seed = seedFromHuman and "HUMAN_LUX_WHAT_WILL_AI_GIVE" or "AI_LUX_WHAT_DOES_AI_WANT"
-    }, "OK"
+  end
+  local o
+  if off%2==0 then o=list(true,hl); if not o then o=list(false,al) end
+  else o=list(false,al); if not o then o=list(true,hl) end end
+  S("AI_"..ai.."_SeedAttempts",attempts); S("AI_"..ai.."_LastSeedResult",why); return o
 end
 
-local function RebuildSnapshot(deal, offer)
-    deal:ClearItems()
-    deal:SetFromPlayer(offer.humanID)
-    deal:SetToPlayer(offer.aiID)
-    for _, item in ipairs(offer.items) do
-        local fromID = item.fromPlayer
-        if item.itemType == TradeableItems.TRADE_ITEM_GOLD then
-            deal:AddGoldTrade(fromID, item.data1)
-        elseif item.itemType == TradeableItems.TRADE_ITEM_GOLD_PER_TURN then
-            deal:AddGoldPerTurnTrade(fromID, item.data1, item.duration > 0 and item.duration or DealDuration())
-        elseif item.itemType == TradeableItems.TRADE_ITEM_RESOURCES then
-            deal:AddResourceTrade(fromID, item.data1, math.max(1, item.data2), item.duration > 0 and item.duration or DealDuration())
-        end
-    end
-end
-
-local function OfferMessage(offer)
-    return "I have a trade proposal that I believe is fair to both of us."
-end
-
-local function QueueNativeOffer(offer)
-    if offer == nil or Game.GetActivePlayer() ~= offer.humanID then return false end
-    local active = Players[offer.humanID]
-    if active == nil or not active:IsTurnActive() then return false end
-    if Game.IsProcessingMessages ~= nil and Game.IsProcessingMessages() then return false end
-    if UI.GetLeaderHeadRootUp ~= nil then
-        local ok, up = pcall(function() return UI.GetLeaderHeadRootUp() end)
-        if ok and up then return false end
-    end
-
-    g_pendingOffer = offer
-    StateSet("NativeUIHeartbeat", "BEGIN_DIPLO")
-    StateSet("LastShownAI", offer.aiID)
-    StateSet("LastShownHuman", offer.humanID)
-    StateSet("LastShownTurn", Game.GetGameTurn())
-    StateSet("LastShownSeed", offer.seed or "")
-    StateSet("LastShownSimpleAIGives", offer.aiGives or -1)
-    StateSet("LastShownSimpleHumanGives", offer.humanGives or -1)
-
-    local ok, err = pcall(function()
-        Players[offer.aiID]:DoBeginDiploWithHuman()
-    end)
-    if not ok then
-        StateSet("NativeUIHeartbeat", "BEGIN_DIPLO_ERROR")
-        StateSet("NativeUIError", tostring(err))
-        g_pendingOffer = nil
-        return false
-    end
-    StateSet("NativeUIHeartbeat", "BEGIN_DIPLO_SENT")
-    return true
-end
-
-local function OnAILeaderMessage(iPlayer, iDiploUIState, szLeaderMessage, iAnimationAction, iData1)
-    local offer = g_pendingOffer
-    if offer == nil then return end
-    if iPlayer ~= offer.aiID or Game.GetActivePlayer() ~= offer.humanID then return end
-    if iDiploUIState ~= DiploUIStateTypes.DIPLO_UI_STATE_DEFAULT_ROOT then return end
-
-    local ok, err = pcall(function()
-        Players[iPlayer]:DoTradeScreenOpened()
-        UI.OnHumanOpenedTradeScreen(iPlayer)
-        RebuildSnapshot(UI.GetScratchDeal(), offer)
-        StateSet("NativeUIHeartbeat", "SCRATCH_DEAL_REBUILT")
-
-        local anim = -1
-        if LeaderheadAnimationTypes ~= nil then
-            anim = LeaderheadAnimationTypes.LEADERHEAD_ANIM_REQUEST
-                or LeaderheadAnimationTypes.LEADERHEAD_ANIM_NEUTRAL_HELLO
-                or -1
-        end
-
-        Events.AILeaderMessage(
-            iPlayer,
-            DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER,
-            OfferMessage(offer),
-            anim,
-            0
-        )
-        StateSet("NativeUIHeartbeat", "AI_OFFER_STATE_SENT")
-    end)
-
-    if not ok then
-        StateSet("NativeUIHeartbeat", "NATIVE_UI_ERROR")
-        StateSet("NativeUIError", tostring(err))
-        CloseHeadlessTrade(iPlayer)
-    end
-    g_pendingOffer = nil
-end
-Events.AILeaderMessage.Add(OnAILeaderMessage)
-
-local function TryAI(aiID, humanID, turn)
-    local humanLux = SpareLuxuries(humanID, aiID)
-    local aiLux = SpareLuxuries(aiID, humanID)
-    StateSet("AI_" .. tostring(aiID) .. "_HumanLuxCount", #humanLux)
-    StateSet("AI_" .. tostring(aiID) .. "_AILuxCount", #aiLux)
-    StateSet("AI_" .. tostring(aiID) .. "_HumanLuxIDs", table.concat(humanLux, ","))
-    StateSet("AI_" .. tostring(aiID) .. "_AILuxIDs", table.concat(aiLux, ","))
-
-    local seedOffset = HashString(tostring(turn) .. "|" .. tostring(aiID) .. "|SEED")
-    local attempts = 0
-
-    local humanFirst = (seedOffset % 2) == 0
-    local function tryList(seedFromHuman, list)
-        local count = math.min(#list, MAX_LUXURY_SEEDS_PER_SIDE)
-        if count <= 0 then return nil end
-        local start = (seedOffset % #list) + 1
-        for n = 0, count - 1 do
-            if g_nativeCalls >= MAX_NATIVE_HELPER_CALLS_PER_TURN then break end
-            local idx = ((start - 1 + n) % #list) + 1
-            attempts = attempts + 1
-            local offer, why = RunNativeSeed(aiID, humanID, seedFromHuman, list[idx])
-            StateSet("AI_" .. tostring(aiID) .. "_LastSeedResult", why)
-            if offer ~= nil then return offer end
-        end
-        return nil
-    end
-
-    local offer
-    if humanFirst then
-        offer = tryList(true, humanLux)
-        if offer == nil then offer = tryList(false, aiLux) end
-    else
-        offer = tryList(false, aiLux)
-        if offer == nil then offer = tryList(true, humanLux) end
-    end
-    StateSet("AI_" .. tostring(aiID) .. "_SeedAttempts", attempts)
-    return offer
-end
-
-local function ScanForOffer()
-    if not Game.IsNetworkMultiPlayer() then
-        SetScanReason("NOT_NETWORK_MULTIPLAYER")
+local function Scan()
+  if not Game.IsNetworkMultiPlayer() then Reason("NOT_NETWORK_MULTIPLAYER"); return end
+  if pending then Reason("OFFER_ALREADY_PENDING"); return end
+  local h=Game.GetActivePlayer()
+  if not HumanMajor(h) then Reason("ACTIVE_PLAYER_NOT_HUMAN_MAJOR"); return end
+  if not Players[h]:IsTurnActive() then Reason("TURN_START_NOT_ACTIVE"); return end
+  if Game.IsProcessingMessages and Game.IsProcessingMessages() then
+    Reason("TURN_START_MESSAGE_QUEUE_BUSY_READY_SIGNAL_ARMED"); retryArmed=true; retryTurn=Game.GetGameTurn(); retryHuman=h; retrySignals=0; return
+  end
+  if UI.GetLeaderHeadRootUp then local ok,up=pcall(UI.GetLeaderHeadRootUp); if ok and up then Reason("LEADER_SCREEN_ALREADY_OPEN"); return end end
+  local turn=Game.GetGameTurn()
+  if turn==lastScanTurn and h==lastScanHuman then Reason("ALREADY_SCANNED_THIS_TURN"); return end
+  lastScanTurn,lastScanHuman,evals=turn,h,0
+  S("OfferScanTurn",turn); S("OfferScanHuman",h); S("NativeEvalBudget",MAX_EVALS)
+  if turn-lastShownTurn<MIN_OFFER_GAP then Reason("LOCAL_OFFER_COOLDOWN"); return end
+  local ais=AIs(h); S("OfferScanEligibleAIs",#ais); S("OfferScanEligibleAIIDs",table.concat(ais,","))
+  if #ais==0 then Reason("NO_ELIGIBLE_AI"); return end
+  local st=(Hash(turn.."|"..h.."|AI")%#ais)+1; local due=0; local ids={}
+  for n=0,#ais-1 do
+    if evals>=MAX_EVALS then break end
+    local ai=ais[((st-1+n)%#ais)+1]
+    if Due(ai,h,turn) then
+      due=due+1; table.insert(ids,ai); S("OfferDueAIIDs",table.concat(ids,","))
+      local o=TryAI(ai,h,turn)
+      if o then
+        Reason("FAIR_SILENT_NATIVE_CANDIDATE_FOUND"); S("OfferNativeEvals",evals); S("OfferDueAIs",due)
+        if Queue(o) then lastShownTurn=turn; Reason("NATIVE_OFFER_SENT") else Reason("CANDIDATE_UI_NOT_SAFE") end
         return
+      end
     end
-    if g_pendingOffer ~= nil then
-        SetScanReason("OFFER_ALREADY_PENDING")
-        return
-    end
-
-    local humanID = Game.GetActivePlayer()
-    if not IsLivingHumanMajor(humanID) then
-        SetScanReason("ACTIVE_PLAYER_NOT_HUMAN_MAJOR")
-        return
-    end
-    local human = Players[humanID]
-    if human == nil or not human:IsTurnActive() then
-        SetScanReason("TURN_START_NOT_ACTIVE")
-        return
-    end
-    if Game.IsProcessingMessages ~= nil and Game.IsProcessingMessages() then
-        SetScanReason("TURN_START_MESSAGE_QUEUE_BUSY_READY_SIGNAL_ARMED")
-        StateSet("OfferRetryHeartbeat", "READY_SIGNAL_ARMED")
-        g_retryArmed = true
-        g_retryTurn = Game.GetGameTurn()
-        g_retryHuman = humanID
-        g_retrySignals = 0
-        return
-    end
-    if UI.GetLeaderHeadRootUp ~= nil then
-        local ok, up = pcall(function() return UI.GetLeaderHeadRootUp() end)
-        if ok and up then
-            SetScanReason("LEADER_SCREEN_ALREADY_OPEN")
-            return
-        end
-    end
-
-    local turn = Game.GetGameTurn()
-    if turn == g_lastScanTurn and humanID == g_lastScanHuman then
-        SetScanReason("ALREADY_SCANNED_THIS_TURN")
-        return
-    end
-    g_lastScanTurn = turn
-    g_lastScanHuman = humanID
-    g_nativeCalls = 0
-
-    StateSet("OfferScanTurn", turn)
-    StateSet("OfferScanHuman", humanID)
-    StateSet("OfferScanHeartbeat", "SCAN_STARTED")
-    StateSet("NativeHelperBudget", MAX_NATIVE_HELPER_CALLS_PER_TURN)
-
-    if turn - g_lastShownTurn < MIN_TURNS_BETWEEN_LOCAL_OFFERS then
-        SetScanReason("LOCAL_OFFER_COOLDOWN")
-        return
-    end
-
-    local ais = EligibleAIs(humanID)
-    StateSet("OfferScanEligibleAIs", #ais)
-    StateSet("OfferScanEligibleAIIDs", table.concat(ais, ","))
-    if #ais == 0 then
-        SetScanReason("NO_ELIGIBLE_AI")
-        return
-    end
-
-    local start = (HashString(tostring(turn) .. "|" .. tostring(humanID) .. "|AI") % #ais) + 1
-    local due = 0
-    local dueIDs = {}
-    StateSet("OfferDueAIIDs", "")
-    for n = 0, #ais - 1 do
-        if g_nativeCalls >= MAX_NATIVE_HELPER_CALLS_PER_TURN then break end
-        local idx = ((start - 1 + n) % #ais) + 1
-        local aiID = ais[idx]
-        if RelationshipOfferDue(aiID, humanID, turn) then
-            due = due + 1
-            table.insert(dueIDs, aiID)
-            StateSet("OfferDueAIIDs", table.concat(dueIDs, ","))
-            local offer = TryAI(aiID, humanID, turn)
-            if offer ~= nil then
-                SetScanReason("FAIR_NATIVE_CANDIDATE_FOUND")
-                StateSet("OfferNativeHelperCalls", g_nativeCalls)
-                StateSet("OfferDueAIs", due)
-                if QueueNativeOffer(offer) then
-                    g_lastShownTurn = turn
-                    SetScanReason("NATIVE_OFFER_SENT")
-                    return
-                else
-                    SetScanReason("CANDIDATE_UI_NOT_SAFE")
-                    return
-                end
-            end
-        end
-    end
-
-    StateSet("OfferNativeHelperCalls", g_nativeCalls)
-    StateSet("OfferDueAIs", due)
-    if due == 0 then
-        SetScanReason("RELATIONSHIP_SCHEDULE_NOT_DUE")
-    elseif g_nativeCalls >= MAX_NATIVE_HELPER_CALLS_PER_TURN then
-        SetScanReason("HELPER_BUDGET_REACHED_NO_VALID_DEAL")
-    else
-        SetScanReason("NO_NATIVE_FAIR_SIMPLE_DEAL")
-    end
+  end
+  S("OfferNativeEvals",evals); S("OfferDueAIs",due)
+  if due==0 then Reason("RELATIONSHIP_SCHEDULE_NOT_DUE")
+  elseif evals>=MAX_EVALS then Reason("NATIVE_EVAL_BUDGET_REACHED_NO_VALID_DEAL")
+  else Reason("NO_SILENT_NATIVE_FAIR_DEAL") end
 end
 
--- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V105_BEGIN
--- ActivePlayerTurnStart can fire while the MP message queue is still busy.
--- Instead of polling per frame, v1.0.5 temporarily subscribes to
--- SerialEventGameDataDirty only for that busy window. The callback performs no
--- deal search while the queue is busy. It removes itself immediately when the
--- queue becomes safe, or at ActivePlayerTurnEnd.
-local OnTurnReadySignal
-
-local function UnregisterTurnReadySignal(reason)
-    if g_retryRegistered and Events.SerialEventGameDataDirty ~= nil then
-        Events.SerialEventGameDataDirty.Remove(OnTurnReadySignal)
-    end
-    g_retryRegistered = false
-    g_retryArmed = false
-    if reason ~= nil then
-        StateSet("OfferRetryHeartbeat", reason)
-    end
+-- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V106_BEGIN
+local Ready
+local function Unready(r)
+  if retryRegistered and Events.SerialEventGameDataDirty then Events.SerialEventGameDataDirty.Remove(Ready) end
+  retryRegistered,retryArmed=false,false
+  if r then S("OfferRetryHeartbeat",r) end
 end
-
-OnTurnReadySignal = function()
-    if not g_retryRegistered then return end
-    g_retrySignals = g_retrySignals + 1
-    StateSet("OfferRetrySignals", g_retrySignals)
-
-    if not g_retryArmed then
-        UnregisterTurnReadySignal("READY_SIGNAL_DISARMED")
-        return
-    end
-
-    if Game.GetGameTurn() ~= g_retryTurn
-        or Game.GetActivePlayer() ~= g_retryHuman then
-        UnregisterTurnReadySignal("READY_SIGNAL_TURN_CHANGED")
-        return
-    end
-
-    local human = Players[g_retryHuman]
-    if human == nil or not human:IsTurnActive() then
-        UnregisterTurnReadySignal("READY_SIGNAL_TURN_INACTIVE")
-        return
-    end
-
-    if Game.IsProcessingMessages ~= nil and Game.IsProcessingMessages() then
-        StateSet("OfferRetryHeartbeat", "READY_SIGNAL_STILL_BUSY")
-        return
-    end
-
-    UnregisterTurnReadySignal("READY_SIGNAL_QUEUE_CLEARED")
-    SetScanReason("TURN_START_MESSAGE_QUEUE_CLEARED_READY_SIGNAL")
-    ScanForOffer()
+Ready=function()
+  if not retryRegistered then return end
+  retrySignals=retrySignals+1; S("OfferRetrySignals",retrySignals)
+  if not retryArmed then Unready("READY_SIGNAL_DISARMED"); return end
+  if Game.GetGameTurn()~=retryTurn or Game.GetActivePlayer()~=retryHuman then Unready("READY_SIGNAL_TURN_CHANGED"); return end
+  if not Players[retryHuman] or not Players[retryHuman]:IsTurnActive() then Unready("READY_SIGNAL_TURN_INACTIVE"); return end
+  if Game.IsProcessingMessages and Game.IsProcessingMessages() then S("OfferRetryHeartbeat","READY_SIGNAL_STILL_BUSY"); return end
+  Unready("READY_SIGNAL_QUEUE_CLEARED"); Reason("TURN_START_MESSAGE_QUEUE_CLEARED_READY_SIGNAL"); Scan()
 end
-
-local function ArmTurnReadySignal()
-    if not g_retryArmed or g_retryRegistered then return end
-    if Events.SerialEventGameDataDirty == nil then
-        SetScanReason("READY_SIGNAL_EVENT_MISSING")
-        StateSet("OfferRetryHeartbeat", "READY_SIGNAL_EVENT_MISSING")
-        g_retryArmed = false
-        return
-    end
-    Events.SerialEventGameDataDirty.Add(OnTurnReadySignal)
-    g_retryRegistered = true
-    StateSet("OfferRetryHeartbeat", "READY_SIGNAL_REGISTERED")
+local function Start()
+  Unready(nil); retryTurn,retryHuman,retrySignals=-1,-1,0; Scan()
+  if retryArmed then
+    if not Events.SerialEventGameDataDirty then Reason("READY_SIGNAL_EVENT_MISSING"); retryArmed=false; return end
+    Events.SerialEventGameDataDirty.Add(Ready); retryRegistered=true; S("OfferRetryHeartbeat","READY_SIGNAL_REGISTERED")
+  end
 end
+local function Finish() if retryRegistered or retryArmed then Unready("READY_SIGNAL_CANCELLED_TURN_END") end end
+Events.ActivePlayerTurnStart.Add(Start)
+if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
+-- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V106_END
 
-local function OnTurnStart()
-    UnregisterTurnReadySignal(nil)
-    g_retryTurn = -1
-    g_retryHuman = -1
-    g_retrySignals = 0
-
-    ScanForOffer()
-    if g_retryArmed then
-        ArmTurnReadySignal()
-    end
-end
-
-local function OnTurnEnd()
-    if g_retryRegistered or g_retryArmed then
-        UnregisterTurnReadySignal("READY_SIGNAL_CANCELLED_TURN_END")
-    end
-end
-
-if Events.ActivePlayerTurnStart ~= nil then
-    Events.ActivePlayerTurnStart.Add(OnTurnStart)
-end
-if Events.ActivePlayerTurnEnd ~= nil then
-    Events.ActivePlayerTurnEnd.Add(OnTurnEnd)
-end
--- LEK_FAIR_TRADES_TRANSIENT_READY_SIGNAL_V105_END
-
-StateSet("Loaded", 1)
-StateSet("RuntimeVersion", RUNTIME_VERSION)
-StateSet("StateSchemaVersion", STATE_SCHEMA_VERSION)
-StateSet("OfferEngine", "NATIVE_WHAT_WILL_GIVE_WHAT_DOES_WANT")
-StateSet("AllowedItems", "LUXURY_GOLD_GPT_ONLY_V1")
-StateSet("LuxurySeedDiscovery", "INVENTORY_FIRST_NATIVE_POSSIBLE_AFTER_CONTEXT_INIT_V105")
-StateSet("StrategicResources", "NEVER")
-StateSet("HumanFairness", "AI_SIMPLE_VALUE_GTE_HUMAN_SIMPLE_VALUE")
-StateSet("PerformanceModel", "ONE_TURN_SCAN_MAX_8_NATIVE_HELPERS_TRANSIENT_READY_SIGNAL_V105")
-StateSet("NativeUIBridge", "EVENT_ONLY_NO_EUI_FILE_PATCH")
-StateSet("RelationshipModel", "LOOSER_FREQUENCY_NATIVE_PRICE")
-StateSet("StartupPopupHidden", 1)
-StateSet("RetryContext", "HIDDEN_EVENT_DRIVEN_CONTEXT_V105")
-
-print("LEK Fair Trades v1.0.5: ready - initialized luxury seeds, transient turn-ready signal, max 8 helper calls/turn")
+S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)
+S("OfferEngine","SILENT_NATIVE_SIDE_VALUATION_CANDIDATES_V106")
+S("AllowedItems","LUXURY_GOLD_GPT_ONLY_V106"); S("StrategicResources","NEVER")
+S("HumanFairness","HUMAN_NATIVE_THEY_VALUE_GTE_MY_VALUE_V106")
+S("PerformanceModel","ONE_TURN_SCAN_MAX_8_NATIVE_EVALS_TRANSIENT_READY_SIGNAL_V106")
+S("NativeUIBridge","EVENT_ONLY_NO_EUI_FILE_PATCH")
+S("RelationshipModel","LOOSER_FREQUENCY_NATIVE_PRICE")
+print("LEK Fair Trades v1.0.6: ready")

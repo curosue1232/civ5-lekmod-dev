@@ -5,6 +5,9 @@ if(!(Test-Path -LiteralPath $RuntimePath -PathType Leaf)){
     throw "Fair Trades runtime not found: $RuntimePath"
 }
 
+# Normalize the target to LF, and normalize every multiline anchor/replacement
+# the same way. The previous version normalized only the target; PowerShell
+# here-strings on Windows remained CRLF, so exact matching always failed.
 $t=[IO.File]::ReadAllText($RuntimePath)
 $t=$t -replace "`r`n","`n"
 
@@ -12,7 +15,14 @@ if($t.Contains('-- LEK_FAIR_TRADES_QUEUE_RETRY_V102_BEGIN')){
     exit 0
 }
 
+function Normalize-LF([string]$s){
+    if($null -eq $s){ return $s }
+    return ($s -replace "`r`n","`n")
+}
+
 function Replace-ExactlyOnce([string]$text,[string]$old,[string]$new,[string]$label){
+    $old=Normalize-LF $old
+    $new=Normalize-LF $new
     $first=$text.IndexOf($old,[StringComparison]::Ordinal)
     if($first -lt 0){ throw "Hotfix anchor not found: $label" }
     $second=$text.IndexOf($old,$first+$old.Length,[StringComparison]::Ordinal)

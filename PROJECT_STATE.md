@@ -13,19 +13,19 @@ GitHub `main` is the shared source of truth for anything the user should test.
 
 - LEK Core v1.3 (Reroll/Rehost v0.21, Host Instant Start v0.1, UltraFast MP Startup v0.3.1, RAS MP Bridge v0.8.8) is working and frozen. Its actual install/uninstall scripts now live in this repo under `internal/core/{R,H,U,RAS}/`, imported unchanged from the original packages — see `internal/core/README.txt`-equivalent per-component READMEs. A `pre-consolidation-2026-08-28` git tag preserves the repo's exact state from before this import.
 - RAS wonder hotfix v0.8.9 (`internal/ras-wonder/`) is an isolated fix on top of RAS v0.8.8, preventing duplicate natural-wonder placement on reroll.
-- Fair Trades v1.2.4 (`internal/fair/`) proactively offers AI trades (luxury swaps and Gold/GPT currency deals) with native-value gating on both the search side and a restored AI-side acceptance check; flat-Gold offers are capped at 10.
+- Fair Trades v1.2.5 (`internal/fair/`) proactively offers AI trades (luxury swaps and Gold/GPT currency deals) with native-value gating on both the search side and a restored AI-side acceptance check; flat-Gold offers are capped at 10, and luxury-for-luxury swaps are prioritized when the human's empire is unhappy.
 - `internal/InstallAll.ps1` / `internal/VerifyAll.ps1` / `internal/UninstallAll.ps1` install, verify, or uninstall the whole stack (core → RAS wonder hotfix → Fair Trades) with one command, in the proven safe order. `internal/DevTool.ps1` remains the interactive menu wrapper.
 - The transient turn-start ready-signal approach works better than a `ContextPtr:SetUpdate` retry approach on the target multiplayer setup.
 - `UI.incTurnTimerSemaphore()`/`decTurnTimerSemaphore()` pauses the MP turn timer while a Fair Trades offer is open, releasing on Accept/Refuse/close or dispatch failure — installed via the same marked-block bridge in EUI's `diplotrade.lua` that synthesizes the AI-offer message.
 
 ## Current Fair Trades state
 
-**Fair Trades v1.2.4 — native-accepted relationship pricing with Gold capped at 10**
+**Fair Trades v1.2.5 — native-accepted relationship pricing with Gold capped at 10 and happiness-aware luxury priority**
 
 Primary runtime: `internal/fair/UI/LEKFairTrades.lua`
 Deployment/verification: `internal/fair/Install.ps1`, `internal/fair/Verify.ps1`, `internal/InstallAll.ps1`, `internal/VerifyAll.ps1`
 
-Search and all native valuation happen before `Players[ai]:DoTradeScreenOpened()` (presession); no `IsPossibleToTradeItem`/`GetDealMyValue`/`GetDealTheyreValue` calls occur after the backend session opens. GPT prices start at a relationship-tier target (Guarded 3 / Neutral 5 / Friendly-Afraid 7), while flat Gold starts from the duration-equivalent relationship price but is capped at 10. Prices adjust directionally toward what the AI's own native valuation (`FairFor(finalV,ai,ai)`) requires; Gold adjustments remain capped at 10. All search stays within a shared 8-native-evaluation budget per scan, including use of the final available evaluation when a starting price passes immediately. Rejected AI/resource/currency combinations are independently suppressed from recurring for 10 turns. Luxury swaps keep strict two-sided (`BothFair`) native fairness unchanged.
+Search and all native valuation happen before `Players[ai]:DoTradeScreenOpened()` (presession); no `IsPossibleToTradeItem`/`GetDealMyValue`/`GetDealTheyreValue` calls occur after the backend session opens. GPT prices start at a relationship-tier target (Guarded 3 / Neutral 5 / Friendly-Afraid 7), while flat Gold starts from the duration-equivalent relationship price but is capped at 10. Prices adjust directionally toward what the AI's own native valuation (`FairFor(finalV,ai,ai)`) requires; Gold adjustments remain capped at 10. All search stays within a shared 8-native-evaluation budget per scan, including use of the final available evaluation when a starting price passes immediately. Rejected AI/resource/currency combinations are independently suppressed from recurring for 10 turns. Luxury swaps keep strict two-sided (`BothFair`) native fairness unchanged; when the active human's empire is unhappy (`Player:IsEmpireUnhappy()`), the luxury-for-luxury `SWAP` shape is tried first instead of taking its normal randomized rotation slot, so a fair luxury swap is more likely to surface than a Gold/GPT offer while happiness is low.
 
 Known Fair Trades follow-ups: none currently established from diagnostics. Continue collecting a fresh capture for any new runtime failure before changing behavior.
 

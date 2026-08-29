@@ -21,7 +21,7 @@ LEK Core v1.3 (Reroll/Rehost v0.21, Host Instant Start v0.1, UltraFast MP Startu
 
 ## RAS wonder hotfix and Fair Trades
 
-RAS wonder hotfix v0.8.9 (`internal/ras-wonder/`) and Fair Trades v1.2.4 (`internal/fair/`) are independent extensions on top of the frozen core — neither depends on the other. Fair Trades' runtime is `LEKFairTrades.lua` + `LEKFairTrades.xml`, entering play through a private `LuaEvents` bridge into EUI's own trade-offer handler rather than patching a generic leader greeting.
+RAS wonder hotfix v0.8.9 (`internal/ras-wonder/`) and Fair Trades v1.2.5 (`internal/fair/`) are independent extensions on top of the frozen core — neither depends on the other. Fair Trades' runtime is `LEKFairTrades.lua` + `LEKFairTrades.xml`, entering play through a private `LuaEvents` bridge into EUI's own trade-offer handler rather than patching a generic leader greeting.
 
 ## Normal dev workflow
 

@@ -41,7 +41,7 @@ COMPONENTS INCLUDED
    - UltraFast MP Startup v0.3.1 Reroll-Safe
    - RAS MP Bridge v0.8.8 Restart Settings Replay
 2. RAS MP Bridge v0.8.9 - Targeted Wonder Graphics Hotfix (on top of RAS v0.8.8)
-3. Fair Trades v1.2.4 - proactive AI trade offers (on top of Core only; does
+3. Fair Trades v1.2.5 - proactive AI trade offers (on top of Core only; does
    not require RAS)
 
 USAGE
@@ -86,7 +86,7 @@ internal\LekTools.ps1        - shared helpers (Civ V detection, file patching)
 internal\CoreVerify.ps1      - combined core verifier
 internal\core\               - Core v1.3 install/uninstall/verify per component
 internal\ras-wonder\         - RAS wonder graphics hotfix v0.8.9
-internal\fair\               - Fair Trades v1.2.4
+internal\fair\               - Fair Trades v1.2.5
 '@
 
 try {

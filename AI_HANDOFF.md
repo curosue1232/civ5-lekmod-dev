@@ -11,7 +11,7 @@ GitHub `main` is the shared source of truth for anything the user should test.
 
 ## Current state
 
-**Fair Trades v1.2.4 — native-accepted relationship pricing with flat-Gold offers capped at 10**, on top of **LEK Core v1.3** (Reroll/Rehost v0.21, Host Instant Start v0.1, UltraFast MP Startup v0.3.1, RAS MP Bridge v0.8.8) and **RAS wonder hotfix v0.8.9**.
+**Fair Trades v1.2.5 — native-accepted relationship pricing with flat-Gold offers capped at 10 and luxury-for-luxury swaps prioritized when the human is unhappy**, on top of **LEK Core v1.3** (Reroll/Rehost v0.21, Host Instant Start v0.1, UltraFast MP Startup v0.3.1, RAS MP Bridge v0.8.8) and **RAS wonder hotfix v0.8.9**.
 
 Primary runtime: `internal/fair/UI/LEKFairTrades.lua`
 Install/verify/uninstall, per component: `internal/fair/*.ps1`, `internal/ras-wonder/*.ps1`, `internal/core/{R,H,U,RAS}/*.ps1`
@@ -20,7 +20,7 @@ Interactive menu: `internal/DevTool.ps1`
 
 ### Status
 
-Fair Trades v1.2.4 builds on the proven v1.2.2 acceptance path: luxury swaps and Gold/GPT currency offers complete on Accept, flat-Gold offers are capped at 10, rejection suppression tracks each AI/resource/currency combination independently, and the final available evaluation can still validate a starting-price offer.
+Fair Trades v1.2.5 builds on the proven v1.2.2 acceptance path: luxury swaps and Gold/GPT currency offers complete on Accept, flat-Gold offers are capped at 10, rejection suppression tracks each AI/resource/currency combination independently, the final available evaluation can still validate a starting-price offer, and luxury-for-luxury swaps are tried first (instead of their normal rotated slot) whenever the active human's empire is unhappy (`Player:IsEmpireUnhappy()`), without weakening the swap's own two-sided fairness gate.
 
 Core v1.3's actual install/uninstall scripts were imported into this repo on 2026-08-28 from the original component packages (previously only read-only verifiers lived here); a `pre-consolidation-2026-08-28` git tag preserves the repo's state from immediately before that import.
 

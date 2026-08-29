@@ -1,4 +1,4 @@
-LEKMOD 30.7 FAIR TRADES v1.2.4
+LEKMOD 30.7 FAIR TRADES v1.2.5
 ================================
 
 PURPOSE

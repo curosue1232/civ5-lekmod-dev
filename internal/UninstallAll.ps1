@@ -30,7 +30,7 @@ try {
     if($confirm -notmatch '^[Yy]'){ W 'Cancelled. Nothing was changed.' Yellow; exit 0 }
 
     $C=Join-Path $Root 'core'
-    Invoke-Child '1/7  Space Next Action v0.2'          (Join-Path $Root 'thumb-action\Uninstall.ps1') $civ
+    Invoke-Child '1/7  Space Next Action v0.3'          (Join-Path $Root 'thumb-action\Uninstall.ps1') $civ
     Invoke-Child '2/7  Fair Trades'                    (Join-Path $Root 'fair\Uninstall.ps1') $civ
     Invoke-Child '3/7  RAS wonder hotfix v0.8.9'        (Join-Path $Root 'ras-wonder\Uninstall.ps1') $civ
     Invoke-Child '4/7  RAS MP Bridge v0.8.8'            (Join-Path $C 'RAS\UNINSTALL_RAS_V088_RESTART_SETTINGS_REPLAY.ps1') $civ

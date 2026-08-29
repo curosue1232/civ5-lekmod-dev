@@ -101,7 +101,7 @@ try {
     # Fair Trades depends only on Core (Reroll/Host/UltraFast), not on RAS v0.8.8
     # or the wonder hotfix -- install it regardless of $installRAS.
     Invoke-Child '6/7  Fair Trades'                        (Join-Path $Root 'fair\Install.ps1') $civ
-    Invoke-Child '7/7  Space Next Action v0.2'              (Join-Path $Root 'thumb-action\Install.ps1') $civ
+    Invoke-Child '7/7  Space Next Action v0.3'              (Join-Path $Root 'thumb-action\Install.ps1') $civ
 
     W ''
     W 'Running combined verification...' Cyan

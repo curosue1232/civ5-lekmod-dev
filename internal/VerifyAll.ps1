@@ -53,8 +53,8 @@ try {
     }
 
     $thumbPanel=Join-LEKPath $civ 'Assets\DLC\Expansion2\UI\InGame\WorldView\ActionInfoPanel.lua'
-    if((Test-LEKPath $thumbPanel) -and (Test-LEKContains $thumbPanel 'LEK_EXT_SPACE_NEXT_ACTION_V02_BEGIN')){
-        Invoke-Verify 'Space Next Action v0.2' (Join-Path $Root 'thumb-action\Verify.ps1') $civ
+    if((Test-LEKPath $thumbPanel) -and (Test-LEKContains $thumbPanel 'LEK_EXT_SPACE_NEXT_ACTION_V03_BEGIN')){
+        Invoke-Verify 'Space Next Action v0.3' (Join-Path $Root 'thumb-action\Verify.ps1') $civ
     } else {
         W ''
         W 'Space Next Action marker not detected; skipping its verification automatically.' Yellow

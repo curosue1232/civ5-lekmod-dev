@@ -12,7 +12,14 @@ try {
         $t=[IO.File]::ReadAllText($target)
         $t=Remove-LEKMarkedBlock $t '-- LEK_EXT_THUMB_NEXT_ACTION_V01_BEGIN' '-- LEK_EXT_THUMB_NEXT_ACTION_V01_END'
         $t=Remove-LEKMarkedBlock $t '-- LEK_EXT_SPACE_NEXT_ACTION_V02_BEGIN' '-- LEK_EXT_SPACE_NEXT_ACTION_V02_END'
+        $t=Remove-LEKMarkedBlock $t '-- LEK_EXT_SPACE_NEXT_ACTION_V03_BEGIN' '-- LEK_EXT_SPACE_NEXT_ACTION_V03_END'
         Write-LEKUtf8NoBom $target $t
+    }
+    $tradeTarget=Join-LEKPath $civ 'Assets\DLC\UI_bc1\LeaderHead\TradeLogic.lua'
+    if(Test-LEKPath $tradeTarget){
+        $t=[IO.File]::ReadAllText($tradeTarget)
+        $t=Remove-LEKMarkedBlock $t '-- LEK_EXT_SPACE_ACCEPT_TRADE_V03_BEGIN' '-- LEK_EXT_SPACE_ACCEPT_TRADE_V03_END'
+        Write-LEKUtf8NoBom $tradeTarget $t
     }
     W 'SPACE/THUMB NEXT ACTION REMOVED.' Green
     exit 0

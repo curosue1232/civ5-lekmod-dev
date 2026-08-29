@@ -206,6 +206,9 @@ function Invoke-Action([string]$A){
         'wonder-install' { return (Run-Script 'internal\ras-wonder\Install.ps1') }
         'wonder-verify'  { return (Run-Script 'internal\ras-wonder\Verify.ps1') }
         'wonder-remove'  { return (Run-Script 'internal\ras-wonder\Uninstall.ps1') }
+        'install-all'    { return (Run-Script 'internal\InstallAll.ps1') }
+        'verify-all'     { return (Run-Script 'internal\VerifyAll.ps1') }
+        'uninstall-all'  { return (Run-Script 'internal\UninstallAll.ps1') }
         'cycle'     { return (Run-OneClickCycle) }
         default     { throw ('Unknown action: '+$A) }
     }
@@ -228,6 +231,9 @@ try {
         W ' 9   Install / update RAS wonder graphics hotfix' White
         W ' 10  Verify RAS wonder graphics hotfix' White
         W ' 11  Uninstall RAS wonder graphics hotfix' White
+        W ' 12  Install EVERYTHING (Core + RAS wonder hotfix + Fair Trades)' White
+        W ' 13  Verify EVERYTHING' White
+        W ' 14  Uninstall EVERYTHING' White
         W ' G   One-time GitHub repository setup' White
         W ' Q   Quit' White
         W ''
@@ -248,6 +254,9 @@ try {
                 '9' { $ec=Invoke-Action 'wonder-install' }
                 '10' { $ec=Invoke-Action 'wonder-verify' }
                 '11' { $ec=Invoke-Action 'wonder-remove' }
+                '12' { $ec=Invoke-Action 'install-all' }
+                '13' { $ec=Invoke-Action 'verify-all' }
+                '14' { $ec=Invoke-Action 'uninstall-all' }
                 'G' {
                     $savedEap=$ErrorActionPreference
                     try {

@@ -1,0 +1,46 @@
+param([string]$CivPath='')
+$ErrorActionPreference='Stop'
+$Root=$PSScriptRoot
+. (Join-Path $Root 'LekTools.ps1')
+function W([string]$s,[ConsoleColor]$c=[ConsoleColor]::Gray){ Write-Host $s -ForegroundColor $c }
+
+function Invoke-Child([string]$Label,[string]$Script,[string]$Civ){
+    W ''
+    W ('==== '+$Label+' ====') Cyan
+    if(!(Test-LEKPath $Script)){ W ('Skipped (not present): '+$Script) DarkGray; return }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Script -CivPath $Civ
+    if($LASTEXITCODE -ne 0){ W ("$Label reported a non-zero exit; continuing uninstall order.") Yellow }
+}
+
+try {
+    W '============================================================' Cyan
+    W ' LEKMOD 30.7 COMBINED UNINSTALL: FAIR TRADES + RAS WONDER HOTFIX + CORE' Cyan
+    W '============================================================' Cyan
+    if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before uninstalling.' }
+
+    $civ=Find-LEKCivV $CivPath
+    if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){ $civ=Find-LEKCivV $m } }
+    if(!$civ){ throw 'Civilization V install folder not found.' }
+    W ('Civ V: '+$civ) Green
+    W 'Uninstall order (reverse of install): Fair Trades -> RAS wonder v0.8.9 -> RAS v0.8.8 -> UltraFast v0.3.1 -> Host Instant Start v0.1 -> Reroll/Rehost v0.21' Gray
+
+    $C=Join-Path $Root 'core'
+    Invoke-Child '1/6  Fair Trades'                    (Join-Path $Root 'fair\Uninstall.ps1') $civ
+    Invoke-Child '2/6  RAS wonder hotfix v0.8.9'        (Join-Path $Root 'ras-wonder\Uninstall.ps1') $civ
+    Invoke-Child '3/6  RAS MP Bridge v0.8.8'            (Join-Path $C 'RAS\UNINSTALL_RAS_V088_RESTART_SETTINGS_REPLAY.ps1') $civ
+    Invoke-Child '4/6  UltraFast MP Startup v0.3.1'     (Join-Path $C 'U\UNINSTALL_ULTRAFAST_MP_STARTUP_V03_REROLLSAFE.ps1') $civ
+    Invoke-Child '5/6  Host Instant Start v0.1'         (Join-Path $C 'H\UNINSTALL_HOST_INSTANT_START_V01.ps1') $civ
+    Invoke-Child '6/6  MP Reroll / Rehost v0.21'        (Join-Path $C 'R\UNINSTALL_V021.ps1') $civ
+
+    W ''
+    W '============================================================' Green
+    W ' COMBINED UNINSTALL COMPLETE' Green
+    W '============================================================' Green
+    W 'It does NOT remove the older RAS v0.8.7.x base, which this stack does not own.' Yellow
+    exit 0
+} catch {
+    W ''
+    W ('ERROR: '+$_.Exception.Message) Red
+    if($_.InvocationInfo -and $_.InvocationInfo.PositionMessage){ W $_.InvocationInfo.PositionMessage DarkGray }
+    exit 1
+}

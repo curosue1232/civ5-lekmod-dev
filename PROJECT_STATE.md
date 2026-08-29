@@ -1,175 +1,59 @@
 # Project State
 
-This file is the **standalone current operational handoff** for the Civ V LEKMOD development project. If an external reviewer can read only one file from the repository, this is the file to use. Do not require `AI_HANDOFF.md` or any other newly-added file to understand the current state.
+This file is the **standalone current operational handoff** for the Civ V LEKMOD development project. If an external reviewer can read only one file from the repository, this is the file to use.
 
 ## Collaboration roles
 
-- **User / tester:** runs the local `T` one-click update, launches Civilization V, tests behavior, and captures diagnostics with Dev Tool option 7 when needed.
-- **ChatGPT:** has GitHub write access for this repository. It integrates fixes, keeps runtime / installer / verifier in sync, reviews diagnostics, and commits testable changes to `main`.
-- **Claude Desktop:** currently has public read access only. It should independently review the current GitHub source, identify bugs / simpler approaches / regression risks, and return precise findings or a patch for ChatGPT to review and integrate.
+- **User / tester:** runs the install/verify cycle, launches Civilization V, tests behavior, and captures diagnostics with `internal/CaptureState.ps1` (`CAPTURE_DEV_STATE.bat`) when needed.
+- **Claude:** works directly on this repository — reviews code and diagnostics, writes patches, runs the installer/verifier, and commits/pushes to `main` with the user's confirmation before each push. There is no separate integrator; this replaced an earlier workflow where a different assistant held GitHub write access.
 
-GitHub `main` is the shared source of truth for anything the user should test with `T`.
+GitHub `main` is the shared source of truth for anything the user should test.
 
 ## Known-good baseline
 
-- LEK Core v1.3 is working and frozen.
-- Development workspace and `T` one-click cycle are the canonical deployment/test path.
-- Old Fair AI Trades experimental remnants were cleaned before the new extension baseline.
-- RAS v0.8.9 targeted wonder-graphics hotfix remains isolated from the frozen core.
-- Fair Trades dedicated loader/context architecture works.
-- The transient turn-start ready-signal approach works better than the abandoned `ContextPtr:SetUpdate` retry approach on the target multiplayer setup.
-- A previous Fair Trades implementation successfully displayed a native Civ V AI trade offer.
-- Direct trade-window presentation is possible without opening the default greeting state.
+- LEK Core v1.3 (Reroll/Rehost v0.21, Host Instant Start v0.1, UltraFast MP Startup v0.3.1, RAS MP Bridge v0.8.8) is working and frozen. Its actual install/uninstall scripts now live in this repo under `internal/core/{R,H,U,RAS}/`, imported unchanged from the original packages — see `internal/core/README.txt`-equivalent per-component READMEs. A `pre-consolidation-2026-08-28` git tag preserves the repo's exact state from before this import.
+- RAS wonder hotfix v0.8.9 (`internal/ras-wonder/`) is an isolated fix on top of RAS v0.8.8, preventing duplicate natural-wonder placement on reroll.
+- Fair Trades v1.2.2 (`internal/fair/`) proactively offers AI trades (luxury swaps and Gold/GPT currency deals) with native-value gating on both the search side and a restored AI-side acceptance check.
+- `internal/InstallAll.ps1` / `internal/VerifyAll.ps1` / `internal/UninstallAll.ps1` install, verify, or uninstall the whole stack (core → RAS wonder hotfix → Fair Trades) with one command, in the proven safe order. `internal/DevTool.ps1` remains the interactive menu wrapper.
+- The transient turn-start ready-signal approach works better than a `ContextPtr:SetUpdate` retry approach on the target multiplayer setup.
+- `UI.incTurnTimerSemaphore()`/`decTurnTimerSemaphore()` pauses the MP turn timer while a Fair Trades offer is open, releasing on Accept/Refuse/close or dispatch failure — installed via the same marked-block bridge in EUI's `diplotrade.lua` that synthesizes the AI-offer message.
 
-## Current Fair Trades test target
+## Current Fair Trades state
 
-**Fair Trades v1.1.3 — SAFE ONE-SESSION NATIVE**
+**Fair Trades v1.2.2 — native-accepted relationship pricing**
 
-Primary runtime:
+Primary runtime: `internal/fair/UI/LEKFairTrades.lua`
+Deployment/verification: `internal/fair/Install.ps1`, `internal/fair/Verify.ps1`, `internal/InstallAll.ps1`, `internal/VerifyAll.ps1`
 
-`internal/fair/UI/LEKFairTrades.lua`
+Search and all native valuation happen before `Players[ai]:DoTradeScreenOpened()` (presession); no `IsPossibleToTradeItem`/`GetDealMyValue`/`GetDealTheyreValue` calls occur after the backend session opens. Currency prices start at a relationship-tier target (Guarded 3 / Neutral 5 / Friendly-Afraid 7 GPT, Gold = rate × `Game.GetDealDuration()`), then adjust directionally toward whatever the AI's own native valuation (`FairFor(finalV,ai,ai)`) actually requires, within a shared 8-native-evaluation budget per scan. A rejected AI/resource/currency candidate is suppressed from recurring for 10 turns. Luxury swaps keep strict two-sided (`BothFair`) native fairness unchanged.
 
-Deployment / verification:
-
-- `internal/fair/Install.ps1`
-- `internal/fair/Verify.ps1`
-- `internal/DevTool.ps1`
-
-v1.1.3 is the **current test target, not yet proven good**.
-
-## Important diagnostic history
-
-- Early v1.0.x builds established the dedicated runtime/context and eventually proved the event-driven busy-queue retry.
-- A native trade offer was successfully displayed in an earlier implementation.
-- v1.1.0 used native helper calls while probing multiple AIs. Testing exposed three regressions:
-  1. an AI could offer its final luxury copy,
-  2. scratch-deal state could mismatch resources,
-  3. closing one offer could reveal queued empty AI trade windows.
-- v1.1.1 removed helper probing and enforced spare-luxury safety with one-session presentation.
-- v1.1.2 added silent Gold/GPT pre-session valuation, but diagnostics showed `CURRENCY_UNIT_NOT_POSSIBLE` even when an AI visibly had Gold/GPT. The currency probe was therefore testing the trade API in an invalid context.
-- v1.1.3 removes that pre-session currency probe. It now:
-  1. selects one eligible AI without opening diplomacy,
-  2. opens at most one trade session for that AI,
-  3. seeds one safe spare luxury inside the selected AI session,
-  4. uses Civ V native trade helper behavior only inside that one session,
-  5. rejects the result unless it is restricted to Luxury / flat Gold / GPT and preserves each civilization's final luxury copy,
-  6. displays the exact native scratch deal in place rather than snapshotting/rebuilding it.
+Known, accepted follow-ups (not yet fixed, low severity):
+- The native-rejection suppression key is a single slot (most-recent-only), not a per-combo set — a second, different rejection can overwrite the first's suppression window early.
+- The seller-side (AI-selling) price escalation doesn't independently re-check `GPTCap()` against the escalated amount before rebuilding the deal; it's expected to be caught by `IsPossibleToTradeItem`'s own native check but that's not independently confirmed.
 
 ## Desired Fair Trades behavior
 
-The eventual feature should proactively offer deals that resemble deals the AI would normally accept / propose in manual diplomacy, with relationship affecting frequency somewhat but not making decent trades excessively rare.
+The feature proactively offers deals that resemble deals the AI would normally accept/propose in manual diplomacy, with relationship affecting frequency and starting price, not making decent trades excessively rare.
 
-Currently desired deal families:
-
-- spare Luxury <-> spare Luxury
-- human spare Luxury -> AI flat Gold
-- human spare Luxury -> AI GPT
-- AI spare Luxury -> human flat Gold
-- AI spare Luxury -> human GPT
-
-For proactive luxury offers, the seller should retain at least one copy after the trade.
+Deal families: spare Luxury <-> spare Luxury; human spare Luxury -> AI flat Gold or GPT; AI spare Luxury -> human flat Gold or GPT. For proactive luxury offers, the seller retains at least one copy after the trade.
 
 ## Known regressions that must not return
 
 1. **No final-copy luxury offers.** A proactive offer must never give away the human's or AI's last available copy of a luxury.
-2. **No queued empty AI windows.** Candidate search must not open trade sessions for multiple AIs. One selected AI session maximum per scan / turn.
+2. **No queued empty AI windows.** Candidate search must not open trade sessions for multiple AIs. One selected AI session maximum per scan/turn.
 3. **No stale scratch-deal mismatch.** A displayed item must not transform into another resource when clicked. Avoid cross-AI scratch state and unnecessary snapshot/rebuild behavior.
-4. **No progressive turn slowdown.** Avoid broad loops, repeated visible helper calls, or unbounded valuation work.
-5. **No strategic resources.** Current Fair Trades scope is luxury resources plus flat Gold / GPT only.
-6. **No default greeting interruption.** Offers should use the normal trade-offer UI rather than a generic leader greeting.
-7. **Do not modify frozen Core v1.3** for isolated Fair Trades problems.
-
-## Current debugging priority
-
-Test whether **v1.1.3** actually produces valid proactive luxury / Gold / GPT offers without reintroducing the v1.1.0 UI-session bugs.
-
-If it does not, diagnose the smallest failing Civ V API assumption before introducing another large valuation engine.
+4. **No progressive turn slowdown.** Avoid broad loops, repeated visible helper calls, or unbounded valuation work — stay inside the shared 8-eval ceiling per scan.
+5. **No strategic resources.** Fair Trades scope is luxury resources plus flat Gold/GPT only.
+6. **No default greeting interruption.** Offers use the normal AI-offer trade UI (`DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER` via the private `diplotrade.lua` bridge), never `UI.OnHumanOpenedTradeScreen` or a spoofed generic leader greeting.
+7. **Do not modify frozen Core v1.3's patch logic** for isolated Fair Trades or RAS wonder hotfix problems — only its packaging/orchestration is shared, never its behavior.
+8. **Auto End Turn must not advance through an unresolved offer.** The turn-timer semaphore pause/release must stay balanced (paired `inc`/`dec`, idempotent release) across Accept, Refuse, screen close, and dispatch failure.
 
 ## Deployment workflow
 
-On the test machine, launch `LEK_DEV_TOOL.bat` and press **T**. The cycle performs:
-
-1. `git pull --ff-only`
-2. Frozen Core v1.3 verification
-3. Fair Trades install/update
-4. Fair Trades verification
-5. RAS wonder hotfix install/update
-6. RAS wonder hotfix verification
-
-If runtime behavior fails, use Dev Tool option 7 once and upload the diagnostic ZIP.
-
-## External AI reviewer bootstrap — direct URLs
-
-Some external browsing tools can open a known GitHub file but cannot crawl GitHub directory listings. **Do not browse `/tree/` pages and do not search for these files. Open these exact URLs directly.**
-
-Primary Fair Trades runtime:
-
-- GitHub blob: `https://github.com/curosue1232/civ5-lekmod-dev/blob/main/internal/fair/UI/LEKFairTrades.lua`
-- Raw: `https://raw.githubusercontent.com/curosue1232/civ5-lekmod-dev/main/internal/fair/UI/LEKFairTrades.lua`
-
-Fair Trades XML context:
-
-- GitHub blob: `https://github.com/curosue1232/civ5-lekmod-dev/blob/main/internal/fair/UI/LEKFairTrades.xml`
-- Raw: `https://raw.githubusercontent.com/curosue1232/civ5-lekmod-dev/main/internal/fair/UI/LEKFairTrades.xml`
-
-Installer:
-
-- GitHub blob: `https://github.com/curosue1232/civ5-lekmod-dev/blob/main/internal/fair/Install.ps1`
-- Raw: `https://raw.githubusercontent.com/curosue1232/civ5-lekmod-dev/main/internal/fair/Install.ps1`
-
-Verifier:
-
-- GitHub blob: `https://github.com/curosue1232/civ5-lekmod-dev/blob/main/internal/fair/Verify.ps1`
-- Raw: `https://raw.githubusercontent.com/curosue1232/civ5-lekmod-dev/main/internal/fair/Verify.ps1`
-
-One-click development tool:
-
-- GitHub blob: `https://github.com/curosue1232/civ5-lekmod-dev/blob/main/internal/DevTool.ps1`
-- Raw: `https://raw.githubusercontent.com/curosue1232/civ5-lekmod-dev/main/internal/DevTool.ps1`
-
-Important: the Fair Trades runtime path is **`internal/fair/UI/LEKFairTrades.lua`**. There is no current runtime at `internal/fair/LEKFairTrades.lua`.
-
-If a GitHub blob URL fails in the external tool, try the matching `raw.githubusercontent.com` URL directly. Do not fall back to directory crawling.
-
-## External AI reviewer instructions
-
-If you are Claude Desktop or another external reviewer, start with this file. Then open the exact direct URLs in the bootstrap section above. Do not require `AI_HANDOFF.md` or `internal/docs/CLAUDE_REVIEW_PROMPT.md`; all necessary review instructions are included here.
-
-Do not assume code from an older chat message is still current if GitHub differs.
-
-Act as an independent reviewer, not as a wholesale rewriter. Look specifically for:
-
-- Civilization V Lua API mistakes or incorrect parameter/order assumptions,
-- scratch-deal lifecycle problems,
-- native trade-helper side effects,
-- multiplayer event/timing problems,
-- any code path that could open/queue multiple diplomacy windows,
-- final-copy luxury safety failures,
-- unnecessary complexity or a simpler native-game solution,
-- performance problems that could worsen turn time,
-- verifier assumptions that do not match the runtime.
-
-Respect every item under `Known regressions that must not return`.
-
-Return the review in these sections:
-
-### Findings
-List concrete issues in severity order. For each one include the exact function or code location, why it is wrong/risky, and the smallest safe fix.
-
-### Recommended minimal change
-Describe the smallest coherent change you recommend. Do not propose a broad rewrite unless the current architecture genuinely cannot work.
-
-### Patch
-If confident, provide a unified diff against the latest GitHub `main`. If a unified diff is impractical, provide complete replacement function(s) and exact replacement locations.
-
-### Regression checklist
-Check each known regression guard above and say whether the proposed change preserves it.
-
-### Test expectations
-Describe exactly what should happen in-game if the fix works and which diagnostics/log fields would best prove it.
-
-Do not claim you pushed or committed anything. Provide a review/patch for ChatGPT to inspect and integrate into GitHub.
+1. Close Civilization V.
+2. Run `internal/InstallAll.ps1` (or `internal/DevTool.ps1`'s one-click cycle) to install/update core → RAS wonder hotfix → Fair Trades in order, or `internal/VerifyAll.ps1` to re-check an existing install without changing anything.
+3. If runtime behavior fails, run `internal/CaptureState.ps1` (`CAPTURE_DEV_STATE.bat`) once and inspect the resulting `LEK_DEV_STATE_*.zip` — it includes the `LEK_FAIR_TRADES-1.db` SimpleValues diagnostic table (query with Python's stdlib `sqlite3`/`zipfile`, no external tools needed) plus current InGame.lua/EUI/Fair Trades runtime files and log tails.
 
 ## Development rule
 
-Prefer the simplest implementation that produces the desired in-game behavior. Keep component-scoped edits small. Diagnose from captured runtime state before redesigning architecture. The frozen core stays untouched unless the issue genuinely belongs to a core component.
+Prefer the simplest implementation that produces the desired in-game behavior. Keep component-scoped edits small. Diagnose from captured runtime state before redesigning architecture. The frozen core's patch logic stays untouched unless an issue is genuinely a core defect, not an extension problem.

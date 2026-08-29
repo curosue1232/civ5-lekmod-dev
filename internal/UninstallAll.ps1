@@ -22,7 +22,7 @@ try {
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){ $civ=Find-LEKCivV $m } }
     if(!$civ){ throw 'Civilization V install folder not found.' }
     W ('Civ V: '+$civ) Green
-    W 'Uninstall order (reverse of install): Thumb Next Action -> Fair Trades -> RAS wonder -> RAS -> UltraFast -> Host Instant Start -> Reroll/Rehost' Gray
+    W 'Uninstall order (reverse of install): Space Next Action -> Fair Trades -> RAS wonder -> RAS -> UltraFast -> Host Instant Start -> Reroll/Rehost' Gray
 
     W ''
     W 'This will remove all patches this stack installed at the path above.' Yellow
@@ -30,7 +30,7 @@ try {
     if($confirm -notmatch '^[Yy]'){ W 'Cancelled. Nothing was changed.' Yellow; exit 0 }
 
     $C=Join-Path $Root 'core'
-    Invoke-Child '1/7  Thumb Next Action v0.1'          (Join-Path $Root 'thumb-action\Uninstall.ps1') $civ
+    Invoke-Child '1/7  Space Next Action v0.2'          (Join-Path $Root 'thumb-action\Uninstall.ps1') $civ
     Invoke-Child '2/7  Fair Trades'                    (Join-Path $Root 'fair\Uninstall.ps1') $civ
     Invoke-Child '3/7  RAS wonder hotfix v0.8.9'        (Join-Path $Root 'ras-wonder\Uninstall.ps1') $civ
     Invoke-Child '4/7  RAS MP Bridge v0.8.8'            (Join-Path $C 'RAS\UNINSTALL_RAS_V088_RESTART_SETTINGS_REPLAY.ps1') $civ

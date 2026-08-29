@@ -33,7 +33,7 @@ function Invoke-Child([string]$Label,[string]$Script,[string]$Civ){
 
 try {
     W '============================================================' Cyan
-    W ' LEKMOD 30.7 COMBINED INSTALL: CORE + RAS WONDER + FAIR TRADES + THUMB ACTION' Cyan
+    W ' LEKMOD 30.7 COMBINED INSTALL: CORE + RAS WONDER + FAIR TRADES + SPACE ACTION' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
 
@@ -41,7 +41,7 @@ try {
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){ $civ=Find-LEKCivV $m } }
     if(!$civ){ throw 'Civilization V install folder not found.' }
     W ('Civ V: '+$civ) Green
-    W 'Install order: Reroll -> Host Instant Start -> UltraFast -> RAS -> RAS wonder -> Fair Trades -> Thumb Next Action' Gray
+    W 'Install order: Reroll -> Host Instant Start -> UltraFast -> RAS -> RAS wonder -> Fair Trades -> Space Next Action' Gray
 
     Show-LEKPrerequisiteMenu @(
         [pscustomobject]@{ Name='LEKMOD v30.7 (required base mod)'; Url='https://github.com/EnormousApplePie/Lekmod/releases/tag/v30.7'; Detected=(Test-LEKModPresent $civ) }
@@ -101,7 +101,7 @@ try {
     # Fair Trades depends only on Core (Reroll/Host/UltraFast), not on RAS v0.8.8
     # or the wonder hotfix -- install it regardless of $installRAS.
     Invoke-Child '6/7  Fair Trades'                        (Join-Path $Root 'fair\Install.ps1') $civ
-    Invoke-Child '7/7  Thumb Next Action v0.1'              (Join-Path $Root 'thumb-action\Install.ps1') $civ
+    Invoke-Child '7/7  Space Next Action v0.2'              (Join-Path $Root 'thumb-action\Install.ps1') $civ
 
     W ''
     W 'Running combined verification...' Cyan

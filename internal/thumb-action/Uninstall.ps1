@@ -11,8 +11,9 @@ try {
     if(Test-LEKPath $target){
         $t=[IO.File]::ReadAllText($target)
         $t=Remove-LEKMarkedBlock $t '-- LEK_EXT_THUMB_NEXT_ACTION_V01_BEGIN' '-- LEK_EXT_THUMB_NEXT_ACTION_V01_END'
+        $t=Remove-LEKMarkedBlock $t '-- LEK_EXT_SPACE_NEXT_ACTION_V02_BEGIN' '-- LEK_EXT_SPACE_NEXT_ACTION_V02_END'
         Write-LEKUtf8NoBom $target $t
     }
-    W 'THUMB NEXT ACTION REMOVED.' Green
+    W 'SPACE/THUMB NEXT ACTION REMOVED.' Green
     exit 0
 } catch { W ('ERROR: '+$_.Exception.Message) Red; exit 1 }

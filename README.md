@@ -23,7 +23,7 @@ LEK Core v1.3 (Reroll/Rehost v0.21, Host Instant Start v0.1, UltraFast MP Startu
 
 RAS wonder hotfix v0.8.9 (`internal/ras-wonder/`) and Fair Trades v1.2.5 (`internal/fair/`) are independent extensions on top of the frozen core — neither depends on the other. Fair Trades' runtime is `LEKFairTrades.lua` + `LEKFairTrades.xml`, entering play through a private `LuaEvents` bridge into EUI's own trade-offer handler rather than patching a generic leader greeting.
 
-Thumb Next Action v0.1 (`internal/thumb-action/`) is another independent extension. The first thumb/back mouse button invokes the existing main action button above the minimap without changing the second thumb button or reimplementing Civ V's action logic.
+Space Next Action v0.2 (`internal/thumb-action/`) is another independent extension. Space invokes the existing main action button above the minimap without reimplementing Civ V's action logic.
 
 ## Normal dev workflow
 

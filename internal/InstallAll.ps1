@@ -44,6 +44,10 @@ try {
     W 'Install order: Reroll v0.21 -> Host Instant Start v0.1 -> UltraFast v0.3.1 -> RAS v0.8.8 -> RAS wonder v0.8.9 -> Fair Trades' Gray
 
     W ''
+    $confirm=Read-Host 'This will patch Civ V files at the path above. Continue? (Y/N)'
+    if($confirm -notmatch '^[Yy]'){ W 'Cancelled. Nothing was changed.' Yellow; exit 0 }
+
+    W ''
     W 'Checking for LEKMOD v30.7...' Cyan
     if(!(Test-LEKModPresent $civ)){
         W ''

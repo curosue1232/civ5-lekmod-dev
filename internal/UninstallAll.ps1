@@ -24,6 +24,11 @@ try {
     W ('Civ V: '+$civ) Green
     W 'Uninstall order (reverse of install): Fair Trades -> RAS wonder v0.8.9 -> RAS v0.8.8 -> UltraFast v0.3.1 -> Host Instant Start v0.1 -> Reroll/Rehost v0.21' Gray
 
+    W ''
+    W 'This will remove all patches this stack installed at the path above.' Yellow
+    $confirm=Read-Host 'Continue? (Y/N)'
+    if($confirm -notmatch '^[Yy]'){ W 'Cancelled. Nothing was changed.' Yellow; exit 0 }
+
     $C=Join-Path $Root 'core'
     Invoke-Child '1/6  Fair Trades'                    (Join-Path $Root 'fair\Uninstall.ps1') $civ
     Invoke-Child '2/6  RAS wonder hotfix v0.8.9'        (Join-Path $Root 'ras-wonder\Uninstall.ps1') $civ

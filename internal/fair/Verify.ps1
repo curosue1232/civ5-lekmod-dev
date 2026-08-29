@@ -18,7 +18,7 @@ function Get-FairEUITradeFiles([string]$Civ){
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.9 MODAL OFFER TURN PAUSE VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.2.0 EXPLICIT RELATIONSHIP PRICING VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -51,11 +51,17 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 119' $t.Contains('local VERSION=119')
-        Check 'v1.1.9 modal turn pause marker' $t.Contains('-- LEK_FAIR_TRADES_MODAL_TURN_PAUSE_V119')
-        Check 'v1.1.9 runtime patch' $t.Contains('V119_MODAL_OFFER_TURN_PAUSE')
+        Check 'runtime version 120' $t.Contains('local VERSION=120')
+        Check 'v1.2.0 explicit relationship pricing marker' $t.Contains('-- LEK_FAIR_TRADES_EXPLICIT_RELATIONSHIP_PRICING_V120')
+        Check 'v1.2.0 runtime patch' $t.Contains('V120_EXPLICIT_RELATIONSHIP_PRICING')
         Check 'no human-open/fake-event policy' $t.Contains('V118_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT')
-        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V119')
+        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V120')
+        Check 'explicit relationship GPT rates' ($t.Contains('MAJOR_CIV_APPROACH_GUARDED then return 3') -and $t.Contains('MAJOR_CIV_APPROACH_NEUTRAL then return 5') -and $t.Contains('MAJOR_CIV_APPROACH_FRIENDLY or a==T.MAJOR_CIV_APPROACH_AFRAID then return 7'))
+        Check 'flat Gold equals GPT rate times duration' $t.Contains('(rate*Duration()) or rate')
+        Check 'currency final gate is AI acceptance only' $t.Contains('if not FairFor(finalV,ai,ai) then return nil,"FINAL_AI_ACCEPTANCE_GATE" end')
+        Check 'old symmetric currency price range removed' (-not ($t.Contains('NO_MUTUALLY_FAIR_CURRENCY_RANGE') -or $t.Contains('local minAmount=') -or $t.Contains('local maxAmount=')))
+        Check 'fixed currency shapes cost one native evaluation' $t.Contains('local cost=1')
+        Check 'luxury swaps retain strict two-sided fairness' $t.Contains('if not BothFair(v) then return nil,"NATIVE_SWAP_VALUE_GATE" end')
         Check 'currency offers both ways' $t.Contains('LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS')
         Check 'both sides preserve last copy' $t.Contains('BOTH_SIDES_PRESERVE_LAST_COPY')
         Check 'spare luxury requires two copies' $t.Contains('GetNumResourceAvailable(r.ID,true) or 0)>=2')
@@ -156,7 +162,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.1.9 MODAL OFFER TURN PAUSE VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.2.0 EXPLICIT RELATIONSHIP PRICING VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

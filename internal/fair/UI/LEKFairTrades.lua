@@ -1,20 +1,20 @@
--- LEKMOD 30.7 Fair Trades v1.1.9 MODAL OFFER TURN PAUSE
+-- LEKMOD 30.7 Fair Trades v1.2.0 EXPLICIT RELATIONSHIP PRICING
 -- Search/value exact Luxury / Gold / GPT candidates before opening the AI trade session.
 -- The visible offer is handed directly to EUI TradeLogic through a private LuaEvents bridge.
 -- No UI.OnHumanOpenedTradeScreen and no spoofed Events.AILeaderMessage call.
 
-print("LEK Fair Trades v1.1.9 MODAL OFFER TURN PAUSE: loading")
+print("LEK Fair Trades v1.2.0 EXPLICIT RELATIONSHIP PRICING: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
-local VERSION=119
+local VERSION=120
 local DB_VERSION=1
 local MIN_OFFER_GAP=2
 local MAX_EVALS=8
 local SEARCH_EVAL_LIMIT=MAX_EVALS
 local FAIR_MESSAGE="I have a trade proposal that I believe is fair to both of us."
 
--- LEK_FAIR_TRADES_MODAL_TURN_PAUSE_V119
+-- LEK_FAIR_TRADES_EXPLICIT_RELATIONSHIP_PRICING_V120
 if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
 MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION=VERSION
 
@@ -29,10 +29,10 @@ local function Reason(r)
   S("OfferScanTurn",t); S("OfferScanHuman",h)
 end
 
-S("RuntimePatch","V119_MODAL_OFFER_TURN_PAUSE")
+S("RuntimePatch","V120_EXPLICIT_RELATIONSHIP_PRICING")
 S("RuntimeHotfix","V118_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT")
-S("OfferEngine","MULTI_AI_SHARED_BUDGET_EUI_DIRECT_OFFER_V119")
-S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V119")
+S("OfferEngine","MULTI_AI_SHARED_BUDGET_EUI_DIRECT_OFFER_V120")
+S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V120")
 S("StrategicResources","NEVER")
 S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
 S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
@@ -102,6 +102,15 @@ local function Due(ai,h,turn)
        or ((a==T.MAJOR_CIV_APPROACH_FRIENDLY or a==T.MAJOR_CIV_APPROACH_AFRAID) and 2)
        or 3
   return ((turn+(Hash(ai.."|"..h.."|REL")%n))%n)==0
+end
+
+local function RelationshipGPTRate(ai,h)
+  local a=Approach(ai,h)
+  local T=MajorCivApproachTypes
+  if a==T.MAJOR_CIV_APPROACH_GUARDED then return 3 end
+  if a==T.MAJOR_CIV_APPROACH_FRIENDLY or a==T.MAJOR_CIV_APPROACH_AFRAID then return 7 end
+  if a==T.MAJOR_CIV_APPROACH_NEUTRAL then return 5 end
+  return 5
 end
 
 local function SpareLux(from,to)
@@ -235,67 +244,24 @@ local function BuildCurrencyDeal(d,ai,h,seller,buyer,res,currency,amount)
 end
 
 local function TryCurrency(d,ai,h,seller,buyer,res,currency)
-  if evals+3>SEARCH_EVAL_LIMIT then return nil,"NATIVE_SEARCH_EVAL_BUDGET" end
-  Prep(d,h,ai)
-  if not AddLux(d,seller,buyer,res) then return nil,"LUXURY_NOT_POSSIBLE" end
-  local luxV,why=Eval(d,ai,h)
-  if not luxV then return nil,why end
-  local sellerNeeds=SideMy(luxV,seller,ai)
-  local buyerMaxValue=SideThey(luxV,buyer,ai)
-  if sellerNeeds<=0 or buyerMaxValue<=0 then return nil,"LUXURY_NATIVE_VALUE_ZERO" end
-
-  Prep(d,h,ai)
-  local unitAdded=false
-  if currency=="GOLD" then unitAdded=AddGold(d,buyer,seller,1)
-  else unitAdded=AddGPT(d,buyer,seller,1) end
-  if not unitAdded then return nil,"CURRENCY_UNIT_NOT_POSSIBLE_PRESESSION" end
-  local unitV
-  unitV,why=Eval(d,ai,h)
-  if not unitV then return nil,why end
-  local buyerCostPer=SideMy(unitV,buyer,ai)
-  local sellerValuePer=SideThey(unitV,seller,ai)
-  if buyerCostPer<=0 or sellerValuePer<=0 then return nil,"CURRENCY_NATIVE_UNIT_ZERO" end
-
-  local minAmount=math.max(1,math.ceil(sellerNeeds/sellerValuePer))
-  local maxAmount=math.floor(buyerMaxValue/buyerCostPer)
+  if evals+1>SEARCH_EVAL_LIMIT then return nil,"NATIVE_SEARCH_EVAL_BUDGET" end
+  local rate=RelationshipGPTRate(ai,h)
+  local amount=(currency=="GOLD") and (rate*Duration()) or rate
+  S("AI_"..ai.."_RelationshipGPTRate",rate)
+  S("AI_"..ai.."_ExplicitPriceAmount",amount)
+  S("AI_"..ai.."_LastPriceCurrency",currency)
   if currency=="GOLD" then
     local payer=Players[buyer]
-    maxAmount=math.min(maxAmount,math.floor((payer and payer.GetGold and (payer:GetGold() or 0)) or 0))
+    if not payer or not payer.GetGold or (payer:GetGold() or 0)<amount then return nil,"EXPLICIT_GOLD_NOT_AFFORDABLE" end
   else
     local cap=GPTCap(buyer)
-    if cap then maxAmount=math.min(maxAmount,cap) end
+    if cap and cap<amount then return nil,"EXPLICIT_GPT_NOT_AFFORDABLE" end
   end
-  S("AI_"..ai.."_LastPriceMin",minAmount); S("AI_"..ai.."_LastPriceMax",maxAmount)
-  S("AI_"..ai.."_LastPriceCurrency",currency)
-  if maxAmount<minAmount then return nil,"NO_MUTUALLY_FAIR_CURRENCY_RANGE" end
-
-  local amount=math.floor((minAmount+maxAmount)/2)
-  if amount<minAmount then amount=minAmount end
   local built,buildWhy=BuildCurrencyDeal(d,ai,h,seller,buyer,res,currency,amount)
   if not built then return nil,"FINAL_"..buildWhy end
-  local finalV
-  finalV,why=Eval(d,ai,h)
+  local finalV,why=Eval(d,ai,h)
   if not finalV then return nil,why end
-
-  if not BothFair(finalV) and evals<SEARCH_EVAL_LIMIT then
-    local retryAmount=nil
-    local sellerOK=FairFor(finalV,seller,ai)
-    local buyerOK=FairFor(finalV,buyer,ai)
-    if not buyerOK and minAmount~=amount then retryAmount=minAmount
-    elseif not sellerOK and maxAmount~=amount then retryAmount=maxAmount end
-    if retryAmount then
-      local retryBuilt=BuildCurrencyDeal(d,ai,h,seller,buyer,res,currency,retryAmount)
-      if retryBuilt then
-        local retryV
-        retryV,why=Eval(d,ai,h)
-        if retryV and BothFair(retryV) then
-          amount=retryAmount; finalV=retryV
-          S("AI_"..ai.."_PriceEndpointRetry",retryAmount)
-        end
-      end
-    end
-  end
-  if not BothFair(finalV) then return nil,"FINAL_NATIVE_VALUE_GATE" end
+  if not FairFor(finalV,ai,ai) then return nil,"FINAL_AI_ACCEPTANCE_GATE" end
   S("AI_"..ai.."_LastPriceAmount",amount)
   local shape
   if seller==h then shape=(currency=="GOLD") and "HUMAN_LUX_FOR_AI_GOLD" or "HUMAN_LUX_FOR_AI_GPT"
@@ -322,7 +288,7 @@ local function TryShapes(d,ai,h,turn,hl,al)
   local aGPTRes=PickOtherRes(al,turn.."|"..ai.."|A_GPT",aGoldRes)
   local lastWhy="NO_SHAPES"
   for _,shape in ipairs(shapes) do
-    local cost=(shape=="SWAP") and 1 or 3
+    local cost=1
     if evals+cost>SEARCH_EVAL_LIMIT then break end
     local c,why=nil,"UNKNOWN_SHAPE"
     if shape=="SWAP" then
@@ -506,4 +472,5 @@ if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
 S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)
 S("PerformanceModel","MULTI_AI_SHARED_PRESESSION_MAX_8_NATIVE_VALUE_CALLS_DIRECT_EUI_HANDLER")
 S("RelationshipModel","GUARDED_5_NEUTRAL_3_FRIENDLY_AFRAID_2")
-print("LEK Fair Trades v1.1.9 MODAL OFFER TURN PAUSE: ready")
+S("CurrencyPricePolicy","GUARDED_3_NEUTRAL_5_FRIENDLY_AFRAID_7_GPT_GOLD_TIMES_DURATION")
+print("LEK Fair Trades v1.2.0 EXPLICIT RELATIONSHIP PRICING: ready")

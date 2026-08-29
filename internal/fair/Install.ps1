@@ -33,7 +33,7 @@ function Get-FairEUITradeFiles([string]$Civ){
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.9 MODAL OFFER TURN PAUSE INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.2.0 EXPLICIT RELATIONSHIP PRICING INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -171,7 +171,7 @@ end)
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.1.9 MODAL OFFER TURN PAUSE INSTALLED.' Green
+    W 'FAIR TRADES v1.2.0 EXPLICIT RELATIONSHIP PRICING INSTALLED.' Green
     if($bridgeChanged){ W 'Optional EUI luxury-offer compatibility bridge was also installed.' Green }
     W 'Candidate search/value is pre-session; visible offers enter TradeLogic through its own LeaderMessageHandler.' Green
     W 'UI.OnHumanOpenedTradeScreen and spoofed Events.AILeaderMessage are not used by the runtime.' Green

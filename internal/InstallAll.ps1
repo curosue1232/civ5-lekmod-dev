@@ -43,6 +43,13 @@ try {
     W ('Civ V: '+$civ) Green
     W 'Install order: Reroll v0.21 -> Host Instant Start v0.1 -> UltraFast v0.3.1 -> RAS v0.8.8 -> RAS wonder v0.8.9 -> Fair Trades' Gray
 
+    Show-LEKPrerequisiteMenu @(
+        [pscustomobject]@{ Name='LEKMOD v30.7 (required base mod)'; Url='https://github.com/EnormousApplePie/Lekmod/releases/tag/v30.7'; Detected=(Test-LEKModPresent $civ) }
+        [pscustomobject]@{ Name='EUI, v1.28 or earlier (v1.29+ is not supported)'; Url='https://forums.civfanatics.com/resources/civ5-enhanced-user-interface.24303/'; Detected=(Test-LEKEUIPresent $civ) }
+    )
+    W 'This installer never downloads or bundles LEKMOD or EUI -- both explicitly' DarkGray
+    W 'prohibit redistribution. It only patches an existing install of each.' DarkGray
+
     W ''
     $confirm=Read-Host 'This will patch Civ V files at the path above. Continue? (Y/N)'
     if($confirm -notmatch '^[Yy]'){ W 'Cancelled. Nothing was changed.' Yellow; exit 0 }

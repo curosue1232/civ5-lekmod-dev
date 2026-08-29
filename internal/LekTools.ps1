@@ -142,6 +142,25 @@ function Test-LEKModPresent([string]$Civ){
     return (Test-LEKPath (Join-LEKPath $Civ 'Assets\DLC\LEKMOD_V30.7') -Container)
 }
 
+# Generalized EUI detection (not Fair-Trades-specific): true only when both
+# LeaderHeadRoot.lua and a TradeLogic.lua/owning DiploTrade.lua pair are
+# present, since that's the same footprint every patch in this workspace
+# actually depends on. Used only to report status -- never to gate anything.
+function Test-LEKEUIPresent([string]$Civ){
+    $leader=Get-LEKLeaderRoot $Civ
+    if(!(Test-LEKPath $leader)){ return $false }
+    $base=Join-LEKPath $Civ 'Assets\DLC\UI_bc1'
+    if(!(Test-LEKPath $base -Container)){ return $false }
+    $tradeLogic=Get-ChildItem -LiteralPath $base -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ieq 'TradeLogic.lua' -and (Test-LEKContains $_.FullName 'function LeaderMessageHandler') } |
+        Select-Object -First 1
+    if(!$tradeLogic){ return $false }
+    $owner=Get-ChildItem -LiteralPath $base -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ieq 'DiploTrade.lua' -and (Test-LEKContains $_.FullName 'Events.AILeaderMessage.Add( LeaderMessageHandler') } |
+        Select-Object -First 1
+    return [bool]$owner
+}
+
 # Offers to open an official third-party prerequisite's page in the default
 # browser. Never downloads or embeds anything -- LEKMOD and EUI both
 # explicitly prohibit redistributing their files without the author's
@@ -153,5 +172,39 @@ function Open-LEKPrereqLink([string]$Label,[string]$Url){
         try { Start-Process $Url } catch { Write-Host ('Could not open a browser automatically. Visit: '+$Url) -ForegroundColor Yellow }
     } else {
         Write-Host ('Visit when ready: '+$Url) -ForegroundColor Yellow
+    }
+}
+
+# Prints every required third-party mod with its detection status and link,
+# then lets the user pick any number of them to auto-open in the default
+# browser (comma-separated numbers, "A" for all, Enter to skip). Read-only
+# detection only -- never downloads, fetches, or bundles anything.
+function Show-LEKPrerequisiteMenu([object[]]$Items){
+    Write-Host ''
+    Write-Host 'Required third-party mods for this stack:' -ForegroundColor Cyan
+    for($i=0;$i -lt $Items.Count;$i++){
+        $it=$Items[$i]
+        $status=if($it.Detected){'[DETECTED]'}else{'[NOT DETECTED]'}
+        $color=if($it.Detected){[ConsoleColor]::Green}else{[ConsoleColor]::Yellow}
+        Write-Host ('  {0}. {1}  {2}' -f ($i+1),$it.Name,$status) -ForegroundColor $color
+        Write-Host ('     '+$it.Url) -ForegroundColor DarkGray
+    }
+    Write-Host ''
+    $sel=Read-Host 'Open any of these in your browser now? (numbers separated by commas, A for all, Enter to skip)'
+    if([string]::IsNullOrWhiteSpace($sel)){ return }
+    $toOpen=@()
+    if($sel -match '^\s*[Aa]'){
+        $toOpen=$Items
+    } else {
+        foreach($tok in ($sel -split ',')){
+            $tok=$tok.Trim()
+            if($tok -match '^\d+$'){
+                $idx=[int]$tok-1
+                if($idx -ge 0 -and $idx -lt $Items.Count){ $toOpen+=$Items[$idx] }
+            }
+        }
+    }
+    foreach($it in $toOpen){
+        try { Start-Process $it.Url } catch { Write-Host ('Could not open a browser automatically. Visit: '+$it.Url) -ForegroundColor Yellow }
     }
 }

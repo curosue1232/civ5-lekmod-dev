@@ -43,6 +43,8 @@ COMPONENTS INCLUDED
 2. RAS MP Bridge v0.8.9 - Targeted Wonder Graphics Hotfix (on top of RAS v0.8.8)
 3. Fair Trades v1.2.5 - proactive AI trade offers (on top of Core only; does
    not require RAS)
+4. Thumb Next Action v0.1 - thumb/back mouse button activates the main action
+   button above the minimap
 
 USAGE
 -----
@@ -87,6 +89,7 @@ internal\CoreVerify.ps1      - combined core verifier
 internal\core\               - Core v1.3 install/uninstall/verify per component
 internal\ras-wonder\         - RAS wonder graphics hotfix v0.8.9
 internal\fair\               - Fair Trades v1.2.5
+internal\thumb-action\       - Thumb Next Action v0.1
 '@
 
 try {
@@ -116,7 +119,7 @@ try {
         Copy-Item -LiteralPath $src -Destination $pkgRoot -Force
     }
 
-    $internalItems=@('LekTools.ps1','CoreVerify.ps1','InstallAll.ps1','VerifyAll.ps1','UninstallAll.ps1','core','ras-wonder','fair')
+    $internalItems=@('LekTools.ps1','CoreVerify.ps1','InstallAll.ps1','VerifyAll.ps1','UninstallAll.ps1','core','ras-wonder','fair','thumb-action')
     foreach($item in $internalItems){
         $src=Join-Path $RepoRoot ('internal\'+$item)
         $dst=Join-Path $pkgRoot ('internal\'+$item)

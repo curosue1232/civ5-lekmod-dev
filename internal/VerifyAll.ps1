@@ -52,6 +52,14 @@ try {
         W 'Fair Trades runtime not detected; skipping its verification automatically.' Yellow
     }
 
+    $thumbPanel=Join-LEKPath $civ 'Assets\DLC\Expansion2\UI\InGame\WorldView\ActionInfoPanel.lua'
+    if((Test-LEKPath $thumbPanel) -and (Test-LEKContains $thumbPanel 'LEK_EXT_THUMB_NEXT_ACTION_V01_BEGIN')){
+        Invoke-Verify 'Thumb Next Action v0.1' (Join-Path $Root 'thumb-action\Verify.ps1') $civ
+    } else {
+        W ''
+        W 'Thumb Next Action marker not detected; skipping its verification automatically.' Yellow
+    }
+
     W ''
     W 'ALL EXPECTED PATCHES VERIFIED.' Green
     exit 0

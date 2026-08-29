@@ -1,20 +1,21 @@
--- LEKMOD 30.7 Fair Trades v1.2.1 AUTHORITATIVE RELATIONSHIP PRICING
+-- LEKMOD 30.7 Fair Trades v1.2.2 NATIVE-ACCEPTED RELATIONSHIP PRICING
 -- Search/value exact Luxury / Gold / GPT candidates before opening the AI trade session.
 -- The visible offer is handed directly to EUI TradeLogic through a private LuaEvents bridge.
 -- No UI.OnHumanOpenedTradeScreen and no spoofed Events.AILeaderMessage call.
 
-print("LEK Fair Trades v1.2.1 AUTHORITATIVE RELATIONSHIP PRICING: loading")
+print("LEK Fair Trades v1.2.2 NATIVE-ACCEPTED RELATIONSHIP PRICING: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
-local VERSION=121
+local VERSION=122
 local DB_VERSION=1
 local MIN_OFFER_GAP=2
+local REJECTED_CANDIDATE_GAP=10
 local MAX_EVALS=8
 local SEARCH_EVAL_LIMIT=MAX_EVALS
 local FAIR_MESSAGE="I have a trade proposal that I believe is fair to both of us."
 
--- LEK_FAIR_TRADES_AUTHORITATIVE_RELATIONSHIP_PRICING_V121
+-- LEK_FAIR_TRADES_NATIVE_ACCEPTED_RELATIONSHIP_PRICING_V122
 if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
 MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION=VERSION
 
@@ -29,10 +30,10 @@ local function Reason(r)
   S("OfferScanTurn",t); S("OfferScanHuman",h)
 end
 
-S("RuntimePatch","V121_AUTHORITATIVE_RELATIONSHIP_PRICING")
+S("RuntimePatch","V122_NATIVE_ACCEPTED_RELATIONSHIP_PRICING")
 S("RuntimeHotfix","V118_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT")
-S("OfferEngine","MULTI_AI_SHARED_BUDGET_EUI_DIRECT_OFFER_V121")
-S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V121")
+S("OfferEngine","MULTI_AI_SHARED_BUDGET_EUI_DIRECT_OFFER_V122")
+S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V122")
 S("StrategicResources","NEVER")
 S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
 S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
@@ -221,6 +222,14 @@ local function PickOtherRes(list,seed,avoid)
   end
   return picked
 end
+local function RecentlyRejected(ai,res,currency,turn)
+  local key=tostring(ai).."|"..tostring(res).."|"..tostring(currency)
+  local rejectedKey=MapModData.LEK_FAIR_TRADES_REJECTED_KEY
+  local rejectedTurn=tonumber(MapModData.LEK_FAIR_TRADES_REJECTED_TURN) or -99999
+  local recent=rejectedKey==key and turn-rejectedTurn<REJECTED_CANDIDATE_GAP
+  if recent then S("AI_"..ai.."_RejectedCandidateSkipped",key) end
+  return recent
+end
 
 local function TrySwap(d,ai,h,hr,ar)
   if evals+1>SEARCH_EVAL_LIMIT then return nil,"NATIVE_SEARCH_EVAL_BUDGET" end
@@ -244,8 +253,10 @@ local function BuildCurrencyDeal(d,ai,h,seller,buyer,res,currency,amount)
 end
 
 local function TryCurrency(d,ai,h,seller,buyer,res,currency)
+  if evals+2>SEARCH_EVAL_LIMIT then return nil,"NATIVE_SEARCH_EVAL_BUDGET" end
   local rate=RelationshipGPTRate(ai,h)
   local amount=(currency=="GOLD") and (rate*Duration()) or rate
+  local floorAmount=(currency=="GOLD") and (3*Duration()) or 3
   S("AI_"..ai.."_RelationshipGPTRate",rate)
   S("AI_"..ai.."_ExplicitPriceAmount",amount)
   S("AI_"..ai.."_LastPriceCurrency",currency)
@@ -258,6 +269,26 @@ local function TryCurrency(d,ai,h,seller,buyer,res,currency)
   end
   local built,buildWhy=BuildCurrencyDeal(d,ai,h,seller,buyer,res,currency,amount)
   if not built then return nil,"FINAL_"..buildWhy end
+  local finalV,why=Eval(d,ai,h)
+  if not finalV then return nil,why end
+  if not FairFor(finalV,ai,ai) then
+    local adjusted
+    if buyer==ai and finalV.aiMy>0 then
+      adjusted=math.floor(amount*finalV.aiThey/finalV.aiMy)
+      adjusted=math.max(floorAmount,math.min(amount-1,adjusted))
+    elseif seller==ai and finalV.aiThey>0 then
+      adjusted=math.ceil(amount*finalV.aiMy/finalV.aiThey)
+      adjusted=math.max(amount+1,adjusted)
+    end
+    if not adjusted or adjusted==amount or evals>=SEARCH_EVAL_LIMIT then return nil,"FINAL_AI_ACCEPTANCE_GATE" end
+    local adjustedBuilt,adjustedWhy=BuildCurrencyDeal(d,ai,h,seller,buyer,res,currency,adjusted)
+    if not adjustedBuilt then return nil,"ADJUSTED_"..adjustedWhy end
+    finalV,why=Eval(d,ai,h)
+    if not finalV then return nil,why end
+    if not FairFor(finalV,ai,ai) then return nil,"ADJUSTED_AI_ACCEPTANCE_GATE" end
+    amount=adjusted
+    S("AI_"..ai.."_AdjustedPriceAmount",amount)
+  end
   S("AI_"..ai.."_LastPriceAmount",amount)
   local shape
   if seller==h then shape=(currency=="GOLD") and "HUMAN_LUX_FOR_AI_GOLD" or "HUMAN_LUX_FOR_AI_GPT"
@@ -284,7 +315,7 @@ local function TryShapes(d,ai,h,turn,hl,al)
   local aGPTRes=PickOtherRes(al,turn.."|"..ai.."|A_GPT",aGoldRes)
   local lastWhy="NO_SHAPES"
   for _,shape in ipairs(shapes) do
-    local cost=(shape=="SWAP") and 1 or 0
+    local cost=(shape=="SWAP") and 1 or 2
     if evals+cost>SEARCH_EVAL_LIMIT then break end
     local c,why=nil,"UNKNOWN_SHAPE"
     if shape=="SWAP" then
@@ -292,13 +323,17 @@ local function TryShapes(d,ai,h,turn,hl,al)
       S("AI_"..ai.."_LastHumanShapeResourceID",hr or -1); S("AI_"..ai.."_LastAIShapeResourceID",ar or -1)
       c,why=TrySwap(d,ai,h,hr,ar)
     elseif shape=="HUMAN_GOLD" then
-      S("AI_"..ai.."_HUMAN_GOLD_ResourceID",hGoldRes or -1); c,why=TryCurrency(d,ai,h,h,ai,hGoldRes,"GOLD")
+      S("AI_"..ai.."_HUMAN_GOLD_ResourceID",hGoldRes or -1)
+      if RecentlyRejected(ai,hGoldRes,"GOLD",turn) then why="RECENT_NATIVE_REJECTION" else c,why=TryCurrency(d,ai,h,h,ai,hGoldRes,"GOLD") end
     elseif shape=="HUMAN_GPT" then
-      S("AI_"..ai.."_HUMAN_GPT_ResourceID",hGPTRes or -1); c,why=TryCurrency(d,ai,h,h,ai,hGPTRes,"GPT")
+      S("AI_"..ai.."_HUMAN_GPT_ResourceID",hGPTRes or -1)
+      if RecentlyRejected(ai,hGPTRes,"GPT",turn) then why="RECENT_NATIVE_REJECTION" else c,why=TryCurrency(d,ai,h,h,ai,hGPTRes,"GPT") end
     elseif shape=="AI_GOLD" then
-      S("AI_"..ai.."_AI_GOLD_ResourceID",aGoldRes or -1); c,why=TryCurrency(d,ai,h,ai,h,aGoldRes,"GOLD")
+      S("AI_"..ai.."_AI_GOLD_ResourceID",aGoldRes or -1)
+      if RecentlyRejected(ai,aGoldRes,"GOLD",turn) then why="RECENT_NATIVE_REJECTION" else c,why=TryCurrency(d,ai,h,ai,h,aGoldRes,"GOLD") end
     elseif shape=="AI_GPT" then
-      S("AI_"..ai.."_AI_GPT_ResourceID",aGPTRes or -1); c,why=TryCurrency(d,ai,h,ai,h,aGPTRes,"GPT")
+      S("AI_"..ai.."_AI_GPT_ResourceID",aGPTRes or -1)
+      if RecentlyRejected(ai,aGPTRes,"GPT",turn) then why="RECENT_NATIVE_REJECTION" else c,why=TryCurrency(d,ai,h,ai,h,aGPTRes,"GPT") end
     end
     S("AI_"..ai.."_LastShape",shape); S("AI_"..ai.."_LastShapeResult",why or "")
     lastWhy=why or lastWhy
@@ -402,6 +437,9 @@ local function ShowOneOffer(seed,h,turn)
     S("DisplayValidation","DIRECT_REBUILD_BEFORE_EUI_HANDLER")
 
     MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_AI=-1
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_CANDIDATE_RES=candidate.res or -1
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_CANDIDATE_CURRENCY=candidate.kind or ""
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_CANDIDATE_AMOUNT=candidate.amount or -1
     S("EUIBridgeDispatch","CALLING")
     LuaEvents.LEKFairTradesAIOffer(ai,FAIR_MESSAGE)
     if MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_AI~=ai then
@@ -469,5 +507,6 @@ S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)
 S("PerformanceModel","MULTI_AI_SHARED_PRESESSION_MAX_8_NATIVE_VALUE_CALLS_DIRECT_EUI_HANDLER")
 S("RelationshipModel","GUARDED_5_NEUTRAL_3_FRIENDLY_AFRAID_2")
 S("CurrencyPricePolicy","GUARDED_3_NEUTRAL_5_FRIENDLY_AFRAID_7_GPT_GOLD_TIMES_DURATION")
-S("CurrencyValidationPolicy","EXPLICIT_PRICE_LEGALITY_AFFORDABILITY_HUMAN_ACCEPT_REFUSE_NO_NATIVE_VALUE_VETO")
-print("LEK Fair Trades v1.2.1 AUTHORITATIVE RELATIONSHIP PRICING: ready")
+S("CurrencyValidationPolicy","RELATIONSHIP_START_DIRECTIONAL_NATIVE_ADJUSTMENT_FINAL_AI_GATE")
+S("RejectedCandidatePolicy","AI_RESOURCE_CURRENCY_10_TURN_SUPPRESSION")
+print("LEK Fair Trades v1.2.2 NATIVE-ACCEPTED RELATIONSHIP PRICING: ready")

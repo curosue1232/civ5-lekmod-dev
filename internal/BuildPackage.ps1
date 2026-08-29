@@ -41,7 +41,7 @@ COMPONENTS INCLUDED
    - UltraFast MP Startup v0.3.1 Reroll-Safe
    - RAS MP Bridge v0.8.8 Restart Settings Replay
 2. RAS MP Bridge v0.8.9 - Targeted Wonder Graphics Hotfix (on top of RAS v0.8.8)
-3. Fair Trades v1.2.2 - proactive AI trade offers (on top of Core only; does
+3. Fair Trades v1.2.4 - proactive AI trade offers (on top of Core only; does
    not require RAS)
 
 USAGE
@@ -86,7 +86,7 @@ internal\LekTools.ps1        - shared helpers (Civ V detection, file patching)
 internal\CoreVerify.ps1      - combined core verifier
 internal\core\               - Core v1.3 install/uninstall/verify per component
 internal\ras-wonder\         - RAS wonder graphics hotfix v0.8.9
-internal\fair\               - Fair Trades v1.2.2
+internal\fair\               - Fair Trades v1.2.4
 '@
 
 try {
@@ -94,7 +94,14 @@ try {
     W ' BUILDING STANDALONE PACKAGE' Cyan
     W '============================================================' Cyan
 
-    $pkgRoot=Join-Path $OutputDir $PackageName
+    $resolvedOutput=[IO.Path]::GetFullPath($OutputDir).TrimEnd('\')
+    $pkgRoot=[IO.Path]::GetFullPath((Join-Path $resolvedOutput $PackageName))
+    $expectedPrefix=$resolvedOutput+'\'
+    if([string]::IsNullOrWhiteSpace($PackageName) -or
+       $pkgRoot -eq $resolvedOutput -or
+       -not $pkgRoot.StartsWith($expectedPrefix,[StringComparison]::OrdinalIgnoreCase)){
+        throw 'PackageName must resolve to a child folder inside OutputDir.'
+    }
     if(Test-Path -LiteralPath $pkgRoot){
         W ('Removing previous build at '+$pkgRoot) Yellow
         Remove-Item -LiteralPath $pkgRoot -Recurse -Force
@@ -126,7 +133,7 @@ try {
     W 'Wrote README.txt' DarkGray
 
     if(-not $NoZip){
-        $zipPath=Join-Path $OutputDir ($PackageName+'.zip')
+        $zipPath=Join-Path $resolvedOutput ($PackageName+'.zip')
         if(Test-Path -LiteralPath $zipPath){ Remove-Item -LiteralPath $zipPath -Force }
         Compress-Archive -Path $pkgRoot -DestinationPath $zipPath -CompressionLevel Optimal
         W ('Zipped: '+$zipPath) Green

@@ -11,7 +11,7 @@ GitHub `main` is the shared source of truth for anything the user should test.
 
 ## Current state
 
-**Fair Trades v1.2.2 — native-accepted relationship pricing**, on top of **LEK Core v1.3** (Reroll/Rehost v0.21, Host Instant Start v0.1, UltraFast MP Startup v0.3.1, RAS MP Bridge v0.8.8) and **RAS wonder hotfix v0.8.9**.
+**Fair Trades v1.2.4 — native-accepted relationship pricing with flat-Gold offers capped at 10**, on top of **LEK Core v1.3** (Reroll/Rehost v0.21, Host Instant Start v0.1, UltraFast MP Startup v0.3.1, RAS MP Bridge v0.8.8) and **RAS wonder hotfix v0.8.9**.
 
 Primary runtime: `internal/fair/UI/LEKFairTrades.lua`
 Install/verify/uninstall, per component: `internal/fair/*.ps1`, `internal/ras-wonder/*.ps1`, `internal/core/{R,H,U,RAS}/*.ps1`
@@ -20,7 +20,7 @@ Interactive menu: `internal/DevTool.ps1`
 
 ### Status
 
-Fair Trades v1.2.2 is proven working: luxury swaps and Gold/GPT currency offers both complete on Accept in testing. Two known, low-severity follow-ups remain open (see `PROJECT_STATE.md`'s "Known, accepted follow-ups").
+Fair Trades v1.2.4 builds on the proven v1.2.2 acceptance path: luxury swaps and Gold/GPT currency offers complete on Accept, flat-Gold offers are capped at 10, rejection suppression tracks each AI/resource/currency combination independently, and the final available evaluation can still validate a starting-price offer.
 
 Core v1.3's actual install/uninstall scripts were imported into this repo on 2026-08-28 from the original component packages (previously only read-only verifiers lived here); a `pre-consolidation-2026-08-28` git tag preserves the repo's state from immediately before that import.
 
@@ -51,7 +51,7 @@ Deal families: spare Luxury <-> spare Luxury; human spare Luxury -> AI flat Gold
 
 ## Current debugging priority
 
-Watch for the two open follow-ups in `PROJECT_STATE.md` actually manifesting in longer play sessions (a suppressed-then-resurfaced rejected offer; an unaffordable escalated GPT amount slipping past `IsPossibleToTradeItem`). Neither has been observed yet as of the last diagnostic capture.
+Confirm in a longer play session that different AIs rotate naturally, rejected combinations remain suppressed for 10 turns, and adjusted GPT offers still complete when accepted.
 
 ## Diagnostic workflow
 

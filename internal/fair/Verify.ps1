@@ -18,7 +18,7 @@ function Get-FairEUITradeFiles([string]$Civ){
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.2.2 NATIVE-ACCEPTED RELATIONSHIP PRICING VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.2.3 GOLD CAPPED AT 10 VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -51,16 +51,18 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 122' $t.Contains('local VERSION=122')
-        Check 'v1.2.2 native-accepted relationship pricing marker' $t.Contains('-- LEK_FAIR_TRADES_NATIVE_ACCEPTED_RELATIONSHIP_PRICING_V122')
-        Check 'v1.2.2 runtime patch' $t.Contains('V122_NATIVE_ACCEPTED_RELATIONSHIP_PRICING')
+        Check 'runtime version 123' $t.Contains('local VERSION=123')
+        Check 'v1.2.3 gold capped marker' $t.Contains('-- LEK_FAIR_TRADES_GOLD_CAPPED_V123')
+        Check 'v1.2.3 runtime patch' $t.Contains('V123_GOLD_CAPPED_AT_10')
         Check 'no human-open/fake-event policy' $t.Contains('V118_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT')
-        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V122')
+        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V123')
         Check 'explicit relationship GPT rates' ($t.Contains('MAJOR_CIV_APPROACH_GUARDED then return 3') -and $t.Contains('MAJOR_CIV_APPROACH_NEUTRAL then return 5') -and $t.Contains('MAJOR_CIV_APPROACH_FRIENDLY or a==T.MAJOR_CIV_APPROACH_AFRAID then return 7'))
-        Check 'flat Gold equals GPT rate times duration' $t.Contains('(rate*Duration()) or rate')
+        Check 'flat Gold starts at GPT rate times duration, capped' $t.Contains('math.min(GOLD_MAX_AMOUNT,rate*Duration()) or rate')
+        Check 'Gold amount cap constant is 10' $t.Contains('local GOLD_MAX_AMOUNT=10')
+        Check 'Gold cap applies to adjusted/escalated amount too' $t.Contains('if adjusted and currency=="GOLD" then adjusted=math.min(adjusted,GOLD_MAX_AMOUNT) end')
         Check 'currency final native AI gate restored' ($t.Contains('FairFor(finalV,ai,ai)') -and $t.Contains('FINAL_AI_ACCEPTANCE_GATE') -and $t.Contains('ADJUSTED_AI_ACCEPTANCE_GATE'))
         Check 'currency adjustment is direction-aware' ($t.Contains('if buyer==ai and finalV.aiMy>0 then') -and $t.Contains('elseif seller==ai and finalV.aiThey>0 then'))
-        Check 'AI-buyer adjustment never drops below 3 GPT equivalent' $t.Contains('math.max(floorAmount,math.min(amount-1,adjusted))')
+        Check 'AI-buyer adjustment never drops below floor' $t.Contains('math.max(floorAmount,math.min(amount-1,adjusted))')
         Check 'old symmetric currency price range removed' (-not ($t.Contains('NO_MUTUALLY_FAIR_CURRENCY_RANGE') -or $t.Contains('local minAmount=') -or $t.Contains('local maxAmount=')))
         Check 'currency shapes reserve two native evaluations' $t.Contains('local cost=(shape=="SWAP") and 1 or 2')
         Check 'accept-time rejection suppression present' ($t.Contains('local function RecentlyRejected') -and $t.Contains('RECENT_NATIVE_REJECTION') -and $t.Contains('REJECTED_CANDIDATE_GAP=10'))
@@ -167,7 +169,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.2.2 NATIVE-ACCEPTED RELATIONSHIP PRICING VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.2.3 GOLD CAPPED AT 10 VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

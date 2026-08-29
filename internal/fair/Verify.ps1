@@ -18,7 +18,7 @@ function Get-FairEUITradeFiles([string]$Civ){
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.2.3 GOLD CAPPED AT 10 VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.2.5 LOW-HAPPINESS LUXURY PRIORITY VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -51,23 +51,29 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 123' $t.Contains('local VERSION=123')
-        Check 'v1.2.3 gold capped marker' $t.Contains('-- LEK_FAIR_TRADES_GOLD_CAPPED_V123')
-        Check 'v1.2.3 runtime patch' $t.Contains('V123_GOLD_CAPPED_AT_10')
+        Check 'runtime version 125' $t.Contains('local VERSION=125')
+        Check 'v1.2.5 low-happiness luxury priority marker' $t.Contains('-- LEK_FAIR_TRADES_LOW_HAPPINESS_LUXURY_PRIORITY_V125')
+        Check 'v1.2.5 runtime patch' $t.Contains('V125_LOW_HAPPINESS_LUXURY_PRIORITY')
         Check 'no human-open/fake-event policy' $t.Contains('V118_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT')
-        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V123')
+        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V125')
         Check 'explicit relationship GPT rates' ($t.Contains('MAJOR_CIV_APPROACH_GUARDED then return 3') -and $t.Contains('MAJOR_CIV_APPROACH_NEUTRAL then return 5') -and $t.Contains('MAJOR_CIV_APPROACH_FRIENDLY or a==T.MAJOR_CIV_APPROACH_AFRAID then return 7'))
         Check 'flat Gold starts at GPT rate times duration, capped' $t.Contains('math.min(GOLD_MAX_AMOUNT,rate*Duration()) or rate')
         Check 'Gold amount cap constant is 10' $t.Contains('local GOLD_MAX_AMOUNT=10')
         Check 'Gold cap applies to adjusted/escalated amount too' $t.Contains('if adjusted and currency=="GOLD" then adjusted=math.min(adjusted,GOLD_MAX_AMOUNT) end')
+        Check 'adjusted GPT is checked against payer capacity' ($t.Contains('local adjustedCap=GPTCap(buyer)') -and $t.Contains('ADJUSTED_GPT_NOT_AFFORDABLE'))
         Check 'currency final native AI gate restored' ($t.Contains('FairFor(finalV,ai,ai)') -and $t.Contains('FINAL_AI_ACCEPTANCE_GATE') -and $t.Contains('ADJUSTED_AI_ACCEPTANCE_GATE'))
         Check 'currency adjustment is direction-aware' ($t.Contains('if buyer==ai and finalV.aiMy>0 then') -and $t.Contains('elseif seller==ai and finalV.aiThey>0 then'))
         Check 'AI-buyer adjustment never drops below floor' $t.Contains('math.max(floorAmount,math.min(amount-1,adjusted))')
         Check 'old symmetric currency price range removed' (-not ($t.Contains('NO_MUTUALLY_FAIR_CURRENCY_RANGE') -or $t.Contains('local minAmount=') -or $t.Contains('local maxAmount=')))
-        Check 'currency shapes reserve two native evaluations' $t.Contains('local cost=(shape=="SWAP") and 1 or 2')
-        Check 'accept-time rejection suppression present' ($t.Contains('local function RecentlyRejected') -and $t.Contains('RECENT_NATIVE_REJECTION') -and $t.Contains('REJECTED_CANDIDATE_GAP=10'))
+        Check 'currency starting price can use final remaining evaluation' $t.Contains('if evals+1>SEARCH_EVAL_LIMIT then return nil,"NATIVE_SEARCH_EVAL_BUDGET" end')
+        Check 'no up-front shape budget break hides cheaper later shapes' (-not $t.Contains('if evals+cost>SEARCH_EVAL_LIMIT then break end'))
+        Check 'accept-time rejection set suppression present' ($t.Contains('local function RecentlyRejected') -and $t.Contains('LEK_FAIR_TRADES_REJECTED_CANDIDATES') -and $t.Contains('RECENT_NATIVE_REJECTION') -and $t.Contains('REJECTED_CANDIDATE_GAP=10'))
         Check 'offer hands candidate identity to EUI bridge' ($t.Contains('LEK_FAIR_TRADES_EUI_OFFER_CANDIDATE_RES') -and $t.Contains('LEK_FAIR_TRADES_EUI_OFFER_CANDIDATE_CURRENCY') -and $t.Contains('LEK_FAIR_TRADES_EUI_OFFER_CANDIDATE_AMOUNT'))
         Check 'luxury swaps retain strict two-sided fairness' $t.Contains('if not BothFair(v) then return nil,"NATIVE_SWAP_VALUE_GATE" end')
+        Check 'low-happiness detection uses native IsEmpireUnhappy' ($t.Contains('local function IsLowHappiness') -and $t.Contains('p:IsEmpireUnhappy()'))
+        Check 'low happiness computed once per candidate search' $t.Contains('local lowHappiness=IsLowHappiness(h)')
+        Check 'luxury-for-luxury swap prioritized when human is unhappy' ($t.Contains('local function ShapeOrder(ai,h,turn,hl,al,prioritizeSwap)') -and $t.Contains('if prioritizeSwap then'))
+        Check 'shape order does not weaken swap fairness gate to prioritize it' $t.Contains('table.insert(out,1,"SWAP")')
         Check 'currency offers both ways' $t.Contains('LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS')
         Check 'both sides preserve last copy' $t.Contains('BOTH_SIDES_PRESERVE_LAST_COPY')
         Check 'spare luxury requires two copies' $t.Contains('GetNumResourceAvailable(r.ID,true) or 0)>=2')
@@ -136,7 +142,7 @@ try {
         Check 'Fair Trades offer pauses automatic turn progress' ($dt.Contains('UI.incTurnTimerSemaphore()') -and $dt.Contains('LEK_FAIR_TRADES_EUI_OFFER_TURN_PAUSED = true'))
         Check 'Fair Trades turn pause has balanced one-shot release' ($dt.Contains('local function LEKFairTradesReleaseTurnPause()') -and $dt.Contains('UI.decTurnTimerSemaphore()') -and ([regex]::Matches($dt,'LEKFairTradesReleaseTurnPause\(\)').Count -ge 4))
         Check 'Fair Trades turn pause releases on bridge failure' ($dt.Contains('if not handled then') -and $dt.Contains('error(handleError)'))
-        Check 'native rejection records scoped candidate key' ($dt.Contains('LEK_FAIR_TRADES_REJECTED_KEY') -and $dt.Contains('LEK_FAIR_TRADES_REJECTED_TURN') -and $dt.Contains('LEK_FAIR_TRADES_REJECTED_AMOUNT'))
+        Check 'native rejection records scoped candidate in rejection set' ($dt.Contains('LEK_FAIR_TRADES_REJECTED_CANDIDATES') -and $dt.Contains('LEK_FAIR_TRADES_REJECTED_CANDIDATES[rejectedKey] = Game.GetGameTurn()') -and $dt.Contains('LEK_FAIR_TRADES_REJECTED_AMOUNT'))
         Check 'accepted Fair Trades offer auto-exits leader view' ($dt.Contains('DIPLO_UI_STATE_TRADE_AI_ACCEPTS_OFFER') -and $dt.Contains('DIPLO_UI_STATE_BLANK_DISCUSSION') -and $dt.Contains('UI.SetLeaderHeadRootUp(false)') -and $dt.Contains('UI.RequestLeaveLeader()'))
         Check 'post-accept auto-exit is one-shot' $dt.Contains('LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING')
         Check 'Fair Trades marker clears when leader view leaves' $dt.Contains('Events.LeavingLeaderViewMode.Add')
@@ -169,7 +175,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.2.3 GOLD CAPPED AT 10 VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.2.5 LOW-HAPPINESS LUXURY PRIORITY VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

@@ -33,7 +33,7 @@ function Get-FairEUITradeFiles([string]$Civ){
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.2.3 GOLD CAPPED AT 10 INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.2.5 LOW-HAPPINESS LUXURY PRIORITY INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -133,8 +133,9 @@ Events.AILeaderMessage.Add(function(iPlayer, iState)
     elseif MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI == iPlayer and
            iState == DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_REJECTS_OFFER then
         LEKFairTradesReleaseTurnPause()
-        MapModData.LEK_FAIR_TRADES_REJECTED_KEY = tostring(iPlayer).."|"..tostring(MapModData.LEK_FAIR_TRADES_EUI_OFFER_CANDIDATE_RES).."|"..tostring(MapModData.LEK_FAIR_TRADES_EUI_OFFER_CANDIDATE_CURRENCY)
-        MapModData.LEK_FAIR_TRADES_REJECTED_TURN = Game.GetGameTurn()
+        MapModData.LEK_FAIR_TRADES_REJECTED_CANDIDATES = MapModData.LEK_FAIR_TRADES_REJECTED_CANDIDATES or {}
+        local rejectedKey = tostring(iPlayer).."|"..tostring(MapModData.LEK_FAIR_TRADES_EUI_OFFER_CANDIDATE_RES).."|"..tostring(MapModData.LEK_FAIR_TRADES_EUI_OFFER_CANDIDATE_CURRENCY)
+        MapModData.LEK_FAIR_TRADES_REJECTED_CANDIDATES[rejectedKey] = Game.GetGameTurn()
         MapModData.LEK_FAIR_TRADES_REJECTED_AMOUNT = MapModData.LEK_FAIR_TRADES_EUI_OFFER_CANDIDATE_AMOUNT
         MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = -1
     end
@@ -188,7 +189,7 @@ end)
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.2.3 GOLD CAPPED AT 10 INSTALLED.' Green
+    W 'FAIR TRADES v1.2.5 LOW-HAPPINESS LUXURY PRIORITY INSTALLED.' Green
     if($bridgeChanged){ W 'Optional EUI luxury-offer compatibility bridge was also installed.' Green }
     W 'Candidate search/value is pre-session; visible offers enter TradeLogic through its own LeaderMessageHandler.' Green
     W 'UI.OnHumanOpenedTradeScreen and spoofed Events.AILeaderMessage are not used by the runtime.' Green

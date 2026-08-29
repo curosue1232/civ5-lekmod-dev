@@ -1,13 +1,13 @@
--- LEKMOD 30.7 Fair Trades v1.2.3 GOLD CAPPED AT 10
+-- LEKMOD 30.7 Fair Trades v1.2.5 LOW-HAPPINESS LUXURY PRIORITY
 -- Search/value exact Luxury / Gold / GPT candidates before opening the AI trade session.
 -- The visible offer is handed directly to EUI TradeLogic through a private LuaEvents bridge.
 -- No UI.OnHumanOpenedTradeScreen and no spoofed Events.AILeaderMessage call.
 
-print("LEK Fair Trades v1.2.3 GOLD CAPPED AT 10: loading")
+print("LEK Fair Trades v1.2.5 LOW-HAPPINESS LUXURY PRIORITY: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
-local VERSION=123
+local VERSION=125
 local DB_VERSION=1
 local MIN_OFFER_GAP=2
 local REJECTED_CANDIDATE_GAP=10
@@ -16,7 +16,7 @@ local MAX_EVALS=8
 local SEARCH_EVAL_LIMIT=MAX_EVALS
 local FAIR_MESSAGE="I have a trade proposal that I believe is fair to both of us."
 
--- LEK_FAIR_TRADES_GOLD_CAPPED_V123
+-- LEK_FAIR_TRADES_LOW_HAPPINESS_LUXURY_PRIORITY_V125
 if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
 MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION=VERSION
 
@@ -31,10 +31,10 @@ local function Reason(r)
   S("OfferScanTurn",t); S("OfferScanHuman",h)
 end
 
-S("RuntimePatch","V123_GOLD_CAPPED_AT_10")
+S("RuntimePatch","V125_LOW_HAPPINESS_LUXURY_PRIORITY")
 S("RuntimeHotfix","V118_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT")
-S("OfferEngine","MULTI_AI_SHARED_BUDGET_EUI_DIRECT_OFFER_V123")
-S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V123")
+S("OfferEngine","MULTI_AI_SHARED_BUDGET_EUI_DIRECT_OFFER_V125")
+S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V125")
 S("StrategicResources","NEVER")
 S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
 S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
@@ -69,6 +69,12 @@ end
 local function AIMajor(id)
   local p=Players[id]
   return p and p:IsAlive() and not p:IsHuman() and not p:IsMinorCiv() and not p:IsBarbarian()
+end
+local function IsLowHappiness(id)
+  local p=Players[id]
+  if not p or not p.IsEmpireUnhappy then return false end
+  local ok,v=pcall(function() return p:IsEmpireUnhappy() end)
+  return ok and v==true
 end
 local function Hash(x)
   x=tostring(x or "")
@@ -225,9 +231,9 @@ local function PickOtherRes(list,seed,avoid)
 end
 local function RecentlyRejected(ai,res,currency,turn)
   local key=tostring(ai).."|"..tostring(res).."|"..tostring(currency)
-  local rejectedKey=MapModData.LEK_FAIR_TRADES_REJECTED_KEY
-  local rejectedTurn=tonumber(MapModData.LEK_FAIR_TRADES_REJECTED_TURN) or -99999
-  local recent=rejectedKey==key and turn-rejectedTurn<REJECTED_CANDIDATE_GAP
+  local rejectedSet=MapModData.LEK_FAIR_TRADES_REJECTED_CANDIDATES
+  local rejectedTurn=(type(rejectedSet)=="table" and tonumber(rejectedSet[key])) or -99999
+  local recent=turn-rejectedTurn<REJECTED_CANDIDATE_GAP
   if recent then S("AI_"..ai.."_RejectedCandidateSkipped",key) end
   return recent
 end
@@ -254,7 +260,7 @@ local function BuildCurrencyDeal(d,ai,h,seller,buyer,res,currency,amount)
 end
 
 local function TryCurrency(d,ai,h,seller,buyer,res,currency)
-  if evals+2>SEARCH_EVAL_LIMIT then return nil,"NATIVE_SEARCH_EVAL_BUDGET" end
+  if evals+1>SEARCH_EVAL_LIMIT then return nil,"NATIVE_SEARCH_EVAL_BUDGET" end
   local rate=RelationshipGPTRate(ai,h)
   local amount=(currency=="GOLD") and math.min(GOLD_MAX_AMOUNT,rate*Duration()) or rate
   local floorAmount=(currency=="GOLD") and 1 or 3
@@ -286,6 +292,10 @@ local function TryCurrency(d,ai,h,seller,buyer,res,currency)
     -- If the AI genuinely needs more than that to accept, the deal is
     -- correctly rejected below rather than exceeding the cap.
     if adjusted and currency=="GOLD" then adjusted=math.min(adjusted,GOLD_MAX_AMOUNT) end
+    if adjusted and currency=="GPT" then
+      local adjustedCap=GPTCap(buyer)
+      if adjustedCap and adjusted>adjustedCap then return nil,"ADJUSTED_GPT_NOT_AFFORDABLE" end
+    end
     if not adjusted or adjusted==amount or evals>=SEARCH_EVAL_LIMIT then return nil,"FINAL_AI_ACCEPTANCE_GATE" end
     local adjustedBuilt,adjustedWhy=BuildCurrencyDeal(d,ai,h,seller,buyer,res,currency,adjusted)
     if not adjustedBuilt then return nil,"ADJUSTED_"..adjustedWhy end
@@ -302,7 +312,7 @@ local function TryCurrency(d,ai,h,seller,buyer,res,currency)
   return {kind=currency,shape=shape,seller=seller,buyer=buyer,res=res,amount=amount},"OK"
 end
 
-local function ShapeOrder(ai,h,turn,hl,al)
+local function ShapeOrder(ai,h,turn,hl,al,prioritizeSwap)
   local shapes={}
   if #hl>0 and #al>0 then table.insert(shapes,"SWAP") end
   if #hl>0 then table.insert(shapes,"HUMAN_GOLD"); table.insert(shapes,"HUMAN_GPT") end
@@ -311,18 +321,24 @@ local function ShapeOrder(ai,h,turn,hl,al)
   local start=(Hash(turn.."|"..h.."|"..ai.."|SHAPE")%#shapes)+1
   local out={}
   for n=0,#shapes-1 do table.insert(out,shapes[((start-1+n)%#shapes)+1]) end
+  if prioritizeSwap then
+    for i,s in ipairs(out) do
+      if s=="SWAP" then
+        if i>1 then table.remove(out,i); table.insert(out,1,"SWAP") end
+        break
+      end
+    end
+  end
   return out
 end
-local function TryShapes(d,ai,h,turn,hl,al)
-  local shapes=ShapeOrder(ai,h,turn,hl,al)
+local function TryShapes(d,ai,h,turn,hl,al,lowHappiness)
+  local shapes=ShapeOrder(ai,h,turn,hl,al,lowHappiness)
   local hGoldRes=PickRes(hl,turn.."|"..ai.."|H_GOLD")
   local hGPTRes=PickOtherRes(hl,turn.."|"..ai.."|H_GPT",hGoldRes)
   local aGoldRes=PickRes(al,turn.."|"..ai.."|A_GOLD")
   local aGPTRes=PickOtherRes(al,turn.."|"..ai.."|A_GPT",aGoldRes)
   local lastWhy="NO_SHAPES"
   for _,shape in ipairs(shapes) do
-    local cost=(shape=="SWAP") and 1 or 2
-    if evals+cost>SEARCH_EVAL_LIMIT then break end
     local c,why=nil,"UNKNOWN_SHAPE"
     if shape=="SWAP" then
       local hr,ar=PickRes(hl,turn.."|"..ai.."|SWAP_H"),PickRes(al,turn.."|"..ai.."|SWAP_A")
@@ -357,6 +373,8 @@ local function FindCandidate(h,turn)
     local start=(Hash(turn.."|"..h.."|AI")%#ais)+1
     local due=0
     local d=UI.GetScratchDeal()
+    local lowHappiness=IsLowHappiness(h)
+    S("HumanLowHappiness",lowHappiness and 1 or 0)
     evals=0; S("OfferNativeEvals",0); S("NativeUIHeartbeat","PRESESSION_MULTI_AI_SEARCH_BEGIN")
     for n=0,#ais-1 do
       local ai=ais[((start-1+n)%#ais)+1]
@@ -365,7 +383,7 @@ local function FindCandidate(h,turn)
         local hl,al=SpareLux(h,ai),SpareLux(ai,h)
         S("AI_"..ai.."_HumanSpareLuxCount",#hl); S("AI_"..ai.."_AISpareLuxCount",#al)
         if #hl>0 or #al>0 then
-          local candidate,why=TryShapes(d,ai,h,turn,hl,al)
+          local candidate,why=TryShapes(d,ai,h,turn,hl,al,lowHappiness)
           if candidate then
             S("OfferVisitedDueAIs",due); S("OfferSearchWinnerAI",ai)
             return {ai=ai,hl=hl,al=al,candidate=candidate},"OK"
@@ -514,5 +532,5 @@ S("PerformanceModel","MULTI_AI_SHARED_PRESESSION_MAX_8_NATIVE_VALUE_CALLS_DIRECT
 S("RelationshipModel","GUARDED_5_NEUTRAL_3_FRIENDLY_AFRAID_2")
 S("CurrencyPricePolicy","GUARDED_3_NEUTRAL_5_FRIENDLY_AFRAID_7_GPT_GOLD_TIMES_DURATION_CAPPED_10")
 S("CurrencyValidationPolicy","RELATIONSHIP_START_DIRECTIONAL_NATIVE_ADJUSTMENT_FINAL_AI_GATE")
-S("RejectedCandidatePolicy","AI_RESOURCE_CURRENCY_10_TURN_SUPPRESSION")
-print("LEK Fair Trades v1.2.3 GOLD CAPPED AT 10: ready")
+S("RejectedCandidatePolicy","PER_AI_RESOURCE_CURRENCY_SET_10_TURN_SUPPRESSION")
+print("LEK Fair Trades v1.2.5 LOW-HAPPINESS LUXURY PRIORITY: ready")

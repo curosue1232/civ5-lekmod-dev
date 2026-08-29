@@ -18,7 +18,7 @@ function Get-FairEUITradeFiles([string]$Civ){
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.7 CANONICAL CURRENCY LEGALITY VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.1.8 DISTINCT CURRENCY LUXURY COVERAGE VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -51,11 +51,11 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 117' $t.Contains('local VERSION=117')
-        Check 'v1.1.7 canonical currency marker' $t.Contains('-- LEK_FAIR_TRADES_CANONICAL_CURRENCY_LEGALITY_V117')
-        Check 'v1.1.7 runtime patch' $t.Contains('V117_CANONICAL_CURRENCY_LEGALITY')
-        Check 'no human-open/fake-event policy' $t.Contains('V117_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT')
-        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V117')
+        Check 'runtime version 118' $t.Contains('local VERSION=118')
+        Check 'v1.1.8 distinct currency luxury marker' $t.Contains('-- LEK_FAIR_TRADES_DISTINCT_CURRENCY_LUXURY_V118')
+        Check 'v1.1.8 runtime patch' $t.Contains('V118_DISTINCT_CURRENCY_LUXURY_COVERAGE')
+        Check 'no human-open/fake-event policy' $t.Contains('V118_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT')
+        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V118')
         Check 'currency offers both ways' $t.Contains('LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS')
         Check 'both sides preserve last copy' $t.Contains('BOTH_SIDES_PRESERVE_LAST_COPY')
         Check 'spare luxury requires two copies' $t.Contains('GetNumResourceAvailable(r.ID,true) or 0)>=2')
@@ -69,6 +69,12 @@ try {
         Check 'Gold legality uses canonical amount-only signature' $t.Contains('Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD,amount)')
         Check 'GPT legality uses canonical duration signature' $t.Contains('Possible(d,from,to,TradeableItems.TRADE_ITEM_GOLD_PER_TURN,amount,Duration())')
         Check 'no zero-duration currency legality probe' (-not ($t.Contains('TRADE_ITEM_GOLD,amount,0') -or $t.Contains('TRADE_ITEM_GOLD_PER_TURN,amount,0')))
+        Check 'distinct currency luxury picker present' $t.Contains('local function PickOtherRes')
+        Check 'Gold and GPT use distinct AI luxury picks' ($t.Contains('local aGoldRes=PickRes') -and $t.Contains('local aGPTRes=PickOtherRes'))
+        Check 'Gold and GPT use distinct human luxury picks' ($t.Contains('local hGoldRes=PickRes') -and $t.Contains('local hGPTRes=PickOtherRes'))
+        Check 'distinct picker preserves singleton/noncollision picks' $t.Contains('#list<=1 or picked~=avoid')
+        Check 'distinct picker rotates a collided pick' $t.Contains('list[(i%#list)+1]')
+        Check 'per-shape currency luxury ID telemetry' ($t.Contains('_HUMAN_GOLD_ResourceID') -and $t.Contains('_HUMAN_GPT_ResourceID') -and $t.Contains('_AI_GOLD_ResourceID') -and $t.Contains('_AI_GPT_ResourceID'))
         Check 'no native trade helper' (-not ($t.Contains('UI.DoWhatWillAIGive') -or $t.Contains('UI.DoWhatDoesAIWant') -or $t.Contains('UI.DoEqualizeDealWithHuman')))
         Check 'no executable human-open trade call' ([regex]::Matches($t,'UI\.OnHumanOpenedTradeScreen\s*\(').Count -eq 0)
         Check 'no executable spoofed AILeaderMessage event' ([regex]::Matches($t,'Events\.AILeaderMessage\s*\(').Count -eq 0)
@@ -147,7 +153,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.1.7 CANONICAL CURRENCY LEGALITY VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.1.8 DISTINCT CURRENCY LUXURY COVERAGE VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

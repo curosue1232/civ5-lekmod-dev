@@ -1,20 +1,20 @@
--- LEKMOD 30.7 Fair Trades v1.1.7 CANONICAL CURRENCY LEGALITY
+-- LEKMOD 30.7 Fair Trades v1.1.8 DISTINCT CURRENCY LUXURY COVERAGE
 -- Search/value exact Luxury / Gold / GPT candidates before opening the AI trade session.
 -- The visible offer is handed directly to EUI TradeLogic through a private LuaEvents bridge.
 -- No UI.OnHumanOpenedTradeScreen and no spoofed Events.AILeaderMessage call.
 
-print("LEK Fair Trades v1.1.7 CANONICAL CURRENCY LEGALITY: loading")
+print("LEK Fair Trades v1.1.8 DISTINCT CURRENCY LUXURY COVERAGE: loading")
 ContextPtr:SetHide(true)
 MapModData = MapModData or {}
 
-local VERSION=117
+local VERSION=118
 local DB_VERSION=1
 local MIN_OFFER_GAP=2
 local MAX_EVALS=8
 local SEARCH_EVAL_LIMIT=MAX_EVALS
 local FAIR_MESSAGE="I have a trade proposal that I believe is fair to both of us."
 
--- LEK_FAIR_TRADES_CANONICAL_CURRENCY_LEGALITY_V117
+-- LEK_FAIR_TRADES_DISTINCT_CURRENCY_LUXURY_V118
 if MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION==VERSION then return end
 MapModData.LEK_FAIR_TRADES_RUNTIME_VERSION=VERSION
 
@@ -29,10 +29,10 @@ local function Reason(r)
   S("OfferScanTurn",t); S("OfferScanHuman",h)
 end
 
-S("RuntimePatch","V117_CANONICAL_CURRENCY_LEGALITY")
-S("RuntimeHotfix","V117_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT")
-S("OfferEngine","MULTI_AI_SHARED_BUDGET_EUI_DIRECT_OFFER_V117")
-S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V117")
+S("RuntimePatch","V118_DISTINCT_CURRENCY_LUXURY_COVERAGE")
+S("RuntimeHotfix","V118_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT")
+S("OfferEngine","MULTI_AI_SHARED_BUDGET_EUI_DIRECT_OFFER_V118")
+S("AllowedItems","LUXURY_FLAT_GOLD_GPT_ONLY_V118")
 S("StrategicResources","NEVER")
 S("LuxuryCopyPolicy","BOTH_SIDES_PRESERVE_LAST_COPY")
 S("CurrencyDirections","LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS")
@@ -204,6 +204,14 @@ local function PickRes(list,seed)
   if not list or #list==0 then return nil end
   return list[(Hash(seed)%#list)+1]
 end
+local function PickOtherRes(list,seed,avoid)
+  local picked=PickRes(list,seed)
+  if not picked or not list or #list<=1 or picked~=avoid then return picked end
+  for i,r in ipairs(list) do
+    if r==picked then return list[(i%#list)+1] end
+  end
+  return picked
+end
 
 local function TrySwap(d,ai,h,hr,ar)
   if evals+1>SEARCH_EVAL_LIMIT then return nil,"NATIVE_SEARCH_EVAL_BUDGET" end
@@ -308,16 +316,28 @@ local function ShapeOrder(ai,h,turn,hl,al)
 end
 local function TryShapes(d,ai,h,turn,hl,al)
   local shapes=ShapeOrder(ai,h,turn,hl,al)
+  local hGoldRes=PickRes(hl,turn.."|"..ai.."|H_GOLD")
+  local hGPTRes=PickOtherRes(hl,turn.."|"..ai.."|H_GPT",hGoldRes)
+  local aGoldRes=PickRes(al,turn.."|"..ai.."|A_GOLD")
+  local aGPTRes=PickOtherRes(al,turn.."|"..ai.."|A_GPT",aGoldRes)
   local lastWhy="NO_SHAPES"
   for _,shape in ipairs(shapes) do
     local cost=(shape=="SWAP") and 1 or 3
     if evals+cost>SEARCH_EVAL_LIMIT then break end
     local c,why=nil,"UNKNOWN_SHAPE"
-    if shape=="SWAP" then c,why=TrySwap(d,ai,h,PickRes(hl,turn.."|"..ai.."|SWAP_H"),PickRes(al,turn.."|"..ai.."|SWAP_A"))
-    elseif shape=="HUMAN_GOLD" then c,why=TryCurrency(d,ai,h,h,ai,PickRes(hl,turn.."|"..ai.."|H_GOLD"),"GOLD")
-    elseif shape=="HUMAN_GPT" then c,why=TryCurrency(d,ai,h,h,ai,PickRes(hl,turn.."|"..ai.."|H_GPT"),"GPT")
-    elseif shape=="AI_GOLD" then c,why=TryCurrency(d,ai,h,ai,h,PickRes(al,turn.."|"..ai.."|A_GOLD"),"GOLD")
-    elseif shape=="AI_GPT" then c,why=TryCurrency(d,ai,h,ai,h,PickRes(al,turn.."|"..ai.."|A_GPT"),"GPT") end
+    if shape=="SWAP" then
+      local hr,ar=PickRes(hl,turn.."|"..ai.."|SWAP_H"),PickRes(al,turn.."|"..ai.."|SWAP_A")
+      S("AI_"..ai.."_LastHumanShapeResourceID",hr or -1); S("AI_"..ai.."_LastAIShapeResourceID",ar or -1)
+      c,why=TrySwap(d,ai,h,hr,ar)
+    elseif shape=="HUMAN_GOLD" then
+      S("AI_"..ai.."_HUMAN_GOLD_ResourceID",hGoldRes or -1); c,why=TryCurrency(d,ai,h,h,ai,hGoldRes,"GOLD")
+    elseif shape=="HUMAN_GPT" then
+      S("AI_"..ai.."_HUMAN_GPT_ResourceID",hGPTRes or -1); c,why=TryCurrency(d,ai,h,h,ai,hGPTRes,"GPT")
+    elseif shape=="AI_GOLD" then
+      S("AI_"..ai.."_AI_GOLD_ResourceID",aGoldRes or -1); c,why=TryCurrency(d,ai,h,ai,h,aGoldRes,"GOLD")
+    elseif shape=="AI_GPT" then
+      S("AI_"..ai.."_AI_GPT_ResourceID",aGPTRes or -1); c,why=TryCurrency(d,ai,h,ai,h,aGPTRes,"GPT")
+    end
     S("AI_"..ai.."_LastShape",shape); S("AI_"..ai.."_LastShapeResult",why or "")
     lastWhy=why or lastWhy
     if c then return c,"OK" end
@@ -486,4 +506,4 @@ if Events.ActivePlayerTurnEnd then Events.ActivePlayerTurnEnd.Add(Finish) end
 S("Loaded",1); S("RuntimeVersion",VERSION); S("StateSchemaVersion",DB_VERSION)
 S("PerformanceModel","MULTI_AI_SHARED_PRESESSION_MAX_8_NATIVE_VALUE_CALLS_DIRECT_EUI_HANDLER")
 S("RelationshipModel","GUARDED_5_NEUTRAL_3_FRIENDLY_AFRAID_2")
-print("LEK Fair Trades v1.1.7 CANONICAL CURRENCY LEGALITY: ready")
+print("LEK Fair Trades v1.1.8 DISTINCT CURRENCY LUXURY COVERAGE: ready")

@@ -1,6 +1,9 @@
 # Machine-local configuration
 local/
 
+# Generated standalone packages (rebuild with internal/BuildPackage.ps1)
+dist/
+
 # Diagnostics and logs
 LEK_DEV_STATE_*.zip
 LEK_RAS_STATE_*.zip

@@ -20,6 +20,12 @@ try {
     if(!$civ){ throw 'Civilization V not found. Pass -CivPath if it is in a nonstandard Steam library.' }
     W ('Civ V: '+$civ) Green
 
+    if(Test-LEKModPresent $civ){
+        W 'LEKMOD v30.7 detected.' Green
+    } else {
+        W 'LEKMOD v30.7 not detected at Assets\DLC\LEKMOD_V30.7 -- everything below depends on it.' Yellow
+    }
+
     Invoke-Verify 'Frozen Core v1.3 (Reroll/Host/UltraFast/RAS v0.8.8)' (Join-Path $Root 'CoreVerify.ps1') $civ @('-RASMode',$RASMode)
 
     # RAS wonder hotfix and Fair Trades are independent siblings on top of Core --

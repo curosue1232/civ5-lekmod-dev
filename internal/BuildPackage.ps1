@@ -15,6 +15,24 @@ LEKMOD 30.7 COMBINED STACK - CORE + RAS WONDER HOTFIX + FAIR TRADES
 This is a standalone, self-contained package. It does not require Git or any
 development tooling -- extract it anywhere and run the .bat files.
 
+REQUIRED BEFORE YOU START (not included in this package)
+----------------------------------------------------------
+This package only patches an existing LEKMOD + EUI installation -- it never
+bundles either one, because both explicitly prohibit redistributing their
+files without the author's permission (LEKMOD's LICENSE; EUI's CivFanatics
+"Fair use" terms). Install these two yourself first:
+
+  1. LEKMOD v30.7 (the actual latest release as of this writing):
+     https://github.com/EnormousApplePie/Lekmod/releases/tag/v30.7
+     Help: https://discord.gg/VQBNPmc
+
+  2. EUI (Enhanced User Interface), v1.28 or EARLIER -- LEKMOD does not
+     support EUI v1.29 or higher:
+     https://forums.civfanatics.com/resources/civ5-enhanced-user-interface.24303/
+
+INSTALL_ALL.bat checks for both before changing anything and will offer to
+open these exact links if either is missing.
+
 COMPONENTS INCLUDED
 --------------------
 1. LEK Core v1.3

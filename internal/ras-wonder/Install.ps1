@@ -24,7 +24,14 @@ try {
     $loadScreen=Join-LEKPath $civ 'Assets\DLC\UI_bc1\GameSetup\LoadScreen.lua'
     $startGame=Join-LEKPath $civ 'Assets\UI\FrontEnd\Multiplayer\GTAS_StartGame.lua'
     if(!(Test-LEKPath $inGame)){ throw 'Lekmod InGame.lua not found.' }
-    if(!(Test-LEKPath $loadScreen)){ throw 'EUI LoadScreen.lua not found.' }
+    if(!(Test-LEKPath $loadScreen)){
+        W ''
+        W 'EUI LoadScreen.lua not found. This hotfix only patches an existing EUI install' Yellow
+        W 'and never bundles it. LEKMOD requires EUI v1.28 or earlier -- v1.29+ is not' Yellow
+        W 'supported.' Yellow
+        Open-LEKPrereqLink 'the official EUI download (get a v1.28 or earlier release)' 'https://forums.civfanatics.com/resources/civ5-enhanced-user-interface.24303/'
+        throw 'EUI LoadScreen.lua not found.'
+    }
     if(!(Test-LEKPath $startGame)){ throw 'GTAS_StartGame.lua not found. RAS MP Bridge runtime is incomplete.' }
 
     $igt=[IO.File]::ReadAllText($inGame)

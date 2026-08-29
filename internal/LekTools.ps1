@@ -137,3 +137,21 @@ function Test-LEKCivRunning {
         return ($p.Count -gt 0)
     } catch { return $false }
 }
+
+function Test-LEKModPresent([string]$Civ){
+    return (Test-LEKPath (Join-LEKPath $Civ 'Assets\DLC\LEKMOD_V30.7') -Container)
+}
+
+# Offers to open an official third-party prerequisite's page in the default
+# browser. Never downloads or embeds anything -- LEKMOD and EUI both
+# explicitly prohibit redistributing their files without the author's
+# permission, so every install in this workspace only detects and patches
+# on top of a copy the user obtained themselves.
+function Open-LEKPrereqLink([string]$Label,[string]$Url){
+    $ans=Read-Host ('Open '+$Label+' in your browser now? (Y/N)')
+    if($ans -match '^[Yy]'){
+        try { Start-Process $Url } catch { Write-Host ('Could not open a browser automatically. Visit: '+$Url) -ForegroundColor Yellow }
+    } else {
+        Write-Host ('Visit when ready: '+$Url) -ForegroundColor Yellow
+    }
+}

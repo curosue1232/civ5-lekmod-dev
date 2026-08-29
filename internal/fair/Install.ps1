@@ -53,8 +53,22 @@ try {
     $tradeLogic=if($euiTrade){$euiTrade.TradeLogic}else{$null}
     $diploTrade=if($euiTrade){$euiTrade.Owner}else{$null}
     if(!(Test-LEKPath $inGame)){ throw 'Lekmod InGame.lua not found.' }
-    if(!(Test-LEKPath $leader)){ throw 'EUI LeaderHeadRoot.lua not found.' }
-    if(!$euiTrade){ throw 'EUI trade context not found. Expected TradeLogic.lua with LeaderMessageHandler and a DiploTrade.lua that registers it.' }
+    if(!(Test-LEKPath $leader)){
+        W ''
+        W 'EUI LeaderHeadRoot.lua not found. Fair Trades only patches an existing EUI' Yellow
+        W 'install and never bundles it (EUI''s own terms prohibit redistributing its' Yellow
+        W 'files). LEKMOD requires EUI v1.28 or earlier -- v1.29+ is not supported.' Yellow
+        Open-LEKPrereqLink 'the official EUI download (get a v1.28 or earlier release)' 'https://forums.civfanatics.com/resources/civ5-enhanced-user-interface.24303/'
+        throw 'EUI LeaderHeadRoot.lua not found.'
+    }
+    if(!$euiTrade){
+        W ''
+        W 'EUI trade context not found (expected TradeLogic.lua with LeaderMessageHandler' Yellow
+        W 'and a DiploTrade.lua that registers it). This usually means an incompatible EUI' Yellow
+        W 'version -- LEKMOD requires EUI v1.28 or earlier, not v1.29+.' Yellow
+        Open-LEKPrereqLink 'the official EUI download (get a v1.28 or earlier release)' 'https://forums.civfanatics.com/resources/civ5-enhanced-user-interface.24303/'
+        throw 'EUI trade context not found. Expected TradeLogic.lua with LeaderMessageHandler and a DiploTrade.lua that registers it.'
+    }
     W ('EUI trade owner: '+$diploTrade) Green
 
     $old=@()

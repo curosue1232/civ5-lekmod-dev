@@ -43,6 +43,20 @@ try {
     W ('Civ V: '+$civ) Green
     W 'Install order: Reroll v0.21 -> Host Instant Start v0.1 -> UltraFast v0.3.1 -> RAS v0.8.8 -> RAS wonder v0.8.9 -> Fair Trades' Gray
 
+    W ''
+    W 'Checking for LEKMOD v30.7...' Cyan
+    if(!(Test-LEKModPresent $civ)){
+        W ''
+        W 'LEKMOD v30.7 was not found at Assets\DLC\LEKMOD_V30.7.' Red
+        W 'This installer only patches an existing LEKMOD install -- it never bundles' Yellow
+        W 'LEKMOD itself, because LEKMOD''s own license prohibits redistributing its' Yellow
+        W 'files without the author''s explicit permission.' Yellow
+        Open-LEKPrereqLink 'the official LEKMOD v30.7 release' 'https://github.com/EnormousApplePie/Lekmod/releases/tag/v30.7'
+        Open-LEKPrereqLink 'the LEKMOD Discord (install help)' 'https://discord.gg/VQBNPmc'
+        throw 'Install LEKMOD v30.7 first, then rerun this installer.'
+    }
+    W 'LEKMOD v30.7 detected.' Green
+
     $C=Join-Path $Root 'core'
     $missingRAS=@(Test-RASV0872Prerequisites $civ)
     $installRAS=$true

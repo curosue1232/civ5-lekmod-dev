@@ -18,7 +18,7 @@ function Get-FairEUITradeFiles([string]$Civ){
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.8 DISTINCT CURRENCY LUXURY COVERAGE VERIFY' Cyan
+    W ' LEK FAIR TRADES v1.1.9 MODAL OFFER TURN PAUSE VERIFY' Cyan
     W '============================================================' Cyan
     $civ=Find-LEKCivV $CivPath
     if(!$civ){ $m=Read-Host 'Paste Civilization V install folder'; if($m){$civ=Find-LEKCivV $m} }
@@ -51,11 +51,11 @@ try {
 
     if(Test-LEKPath $lua){
         $t=[IO.File]::ReadAllText($lua)
-        Check 'runtime version 118' $t.Contains('local VERSION=118')
-        Check 'v1.1.8 distinct currency luxury marker' $t.Contains('-- LEK_FAIR_TRADES_DISTINCT_CURRENCY_LUXURY_V118')
-        Check 'v1.1.8 runtime patch' $t.Contains('V118_DISTINCT_CURRENCY_LUXURY_COVERAGE')
+        Check 'runtime version 119' $t.Contains('local VERSION=119')
+        Check 'v1.1.9 modal turn pause marker' $t.Contains('-- LEK_FAIR_TRADES_MODAL_TURN_PAUSE_V119')
+        Check 'v1.1.9 runtime patch' $t.Contains('V119_MODAL_OFFER_TURN_PAUSE')
         Check 'no human-open/fake-event policy' $t.Contains('V118_NO_HUMAN_OPEN_NO_FAKE_AI_EVENT')
-        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V118')
+        Check 'luxury Gold GPT only' $t.Contains('LUXURY_FLAT_GOLD_GPT_ONLY_V119')
         Check 'currency offers both ways' $t.Contains('LUXURY_FOR_GOLD_OR_GPT_BOTH_WAYS')
         Check 'both sides preserve last copy' $t.Contains('BOTH_SIDES_PRESERVE_LAST_COPY')
         Check 'spare luxury requires two copies' $t.Contains('GetNumResourceAvailable(r.ID,true) or 0)>=2')
@@ -118,9 +118,12 @@ try {
         Check 'exactly one direct EUI bridge' ([regex]::Matches($dt,'LEK_EXT_FAIR_TRADES_AI_OFFER_BRIDGE_BEGIN').Count -eq 1)
         Check 'EUI bridge ready marker' $dt.Contains('LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_READY = true')
         Check 'EUI bridge listens to private LuaEvent' $dt.Contains('LuaEvents.LEKFairTradesAIOffer.Add')
-        Check 'EUI bridge calls LeaderMessageHandler directly' $dt.Contains('LeaderMessageHandler(iPlayer, DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER, szMessage, -1, 0)')
+        Check 'EUI bridge calls LeaderMessageHandler directly' $dt.Contains('pcall(LeaderMessageHandler, iPlayer, DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER, szMessage, -1, 0)')
         Check 'EUI bridge acknowledges handled AI' $dt.Contains('LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_AI = iPlayer')
         Check 'Fair Trades offer tracks active AI' $dt.Contains('LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = iPlayer')
+        Check 'Fair Trades offer pauses automatic turn progress' ($dt.Contains('UI.incTurnTimerSemaphore()') -and $dt.Contains('LEK_FAIR_TRADES_EUI_OFFER_TURN_PAUSED = true'))
+        Check 'Fair Trades turn pause has balanced one-shot release' ($dt.Contains('local function LEKFairTradesReleaseTurnPause()') -and $dt.Contains('UI.decTurnTimerSemaphore()') -and ([regex]::Matches($dt,'LEKFairTradesReleaseTurnPause\(\)').Count -ge 4))
+        Check 'Fair Trades turn pause releases on bridge failure' ($dt.Contains('if not handled then') -and $dt.Contains('error(handleError)'))
         Check 'accepted Fair Trades offer auto-exits leader view' ($dt.Contains('DIPLO_UI_STATE_TRADE_AI_ACCEPTS_OFFER') -and $dt.Contains('DIPLO_UI_STATE_BLANK_DISCUSSION') -and $dt.Contains('UI.SetLeaderHeadRootUp(false)') -and $dt.Contains('UI.RequestLeaveLeader()'))
         Check 'post-accept auto-exit is one-shot' $dt.Contains('LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING')
         Check 'Fair Trades marker clears when leader view leaves' $dt.Contains('Events.LeavingLeaderViewMode.Add')
@@ -153,7 +156,7 @@ try {
     }
 
     W ''
-    if($good){ W 'FAIR TRADES v1.1.8 DISTINCT CURRENCY LUXURY COVERAGE VERIFIED.' Green; exit 0 }
+    if($good){ W 'FAIR TRADES v1.1.9 MODAL OFFER TURN PAUSE VERIFIED.' Green; exit 0 }
     W 'VERIFY FOUND A PROBLEM.' Red
     foreach($f in $failed){ W ('  - '+$f) Red }
     exit 1

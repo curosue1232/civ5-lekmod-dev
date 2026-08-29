@@ -33,7 +33,7 @@ function Get-FairEUITradeFiles([string]$Civ){
 
 try {
     W '============================================================' Cyan
-    W ' LEK FAIR TRADES v1.1.8 DISTINCT CURRENCY LUXURY COVERAGE INSTALLER' Cyan
+    W ' LEK FAIR TRADES v1.1.9 MODAL OFFER TURN PAUSE INSTALLER' Cyan
     W '============================================================' Cyan
     if(Test-LEKCivRunning){ throw 'Civilization V appears to be running. Close it before installing.' }
     $civ=Find-LEKCivV $CivPath
@@ -83,11 +83,25 @@ try {
     $offerBridgeBody=@'
 MapModData = MapModData or {}
 MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_READY = true
+local function LEKFairTradesReleaseTurnPause()
+    if MapModData.LEK_FAIR_TRADES_EUI_OFFER_TURN_PAUSED then
+        MapModData.LEK_FAIR_TRADES_EUI_OFFER_TURN_PAUSED = false
+        UI.decTurnTimerSemaphore()
+    end
+end
 LuaEvents.LEKFairTradesAIOffer.Add(function(iPlayer, szMessage)
+    LEKFairTradesReleaseTurnPause()
+    UI.incTurnTimerSemaphore()
+    MapModData.LEK_FAIR_TRADES_EUI_OFFER_TURN_PAUSED = true
     MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = iPlayer
     MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING = false
     MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_CALLED_AI = iPlayer
-    LeaderMessageHandler(iPlayer, DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER, szMessage, -1, 0)
+    local handled, handleError = pcall(LeaderMessageHandler, iPlayer, DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER, szMessage, -1, 0)
+    if not handled then
+        LEKFairTradesReleaseTurnPause()
+        MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = -1
+        error(handleError)
+    end
     MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_AI = iPlayer
     MapModData.LEK_FAIR_TRADES_EUI_OFFER_BRIDGE_LAST_HANDLED_STATE = DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_MAKES_OFFER
 end)
@@ -96,6 +110,7 @@ Events.AILeaderMessage.Add(function(iPlayer, iState)
        not MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING and
        (iState == DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_ACCEPTS_OFFER or
         iState == DiploUIStateTypes.DIPLO_UI_STATE_BLANK_DISCUSSION) then
+        LEKFairTradesReleaseTurnPause()
         MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING = true
         MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = -1
         MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXITED_AI = iPlayer
@@ -103,10 +118,12 @@ Events.AILeaderMessage.Add(function(iPlayer, iState)
         UI.RequestLeaveLeader()
     elseif MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI == iPlayer and
            iState == DiploUIStateTypes.DIPLO_UI_STATE_TRADE_AI_REJECTS_OFFER then
+        LEKFairTradesReleaseTurnPause()
         MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = -1
     end
 end)
 Events.LeavingLeaderViewMode.Add(function()
+    LEKFairTradesReleaseTurnPause()
     MapModData.LEK_FAIR_TRADES_EUI_OFFER_ACTIVE_AI = -1
     MapModData.LEK_FAIR_TRADES_EUI_OFFER_AUTO_EXIT_CLOSING = false
 end)
@@ -154,7 +171,7 @@ end)
     if($LASTEXITCODE -ne 0){ throw 'Fair Trades files were written, but verification failed.' }
 
     W ''
-    W 'FAIR TRADES v1.1.8 DISTINCT CURRENCY LUXURY COVERAGE INSTALLED.' Green
+    W 'FAIR TRADES v1.1.9 MODAL OFFER TURN PAUSE INSTALLED.' Green
     if($bridgeChanged){ W 'Optional EUI luxury-offer compatibility bridge was also installed.' Green }
     W 'Candidate search/value is pre-session; visible offers enter TradeLogic through its own LeaderMessageHandler.' Green
     W 'UI.OnHumanOpenedTradeScreen and spoofed Events.AILeaderMessage are not used by the runtime.' Green

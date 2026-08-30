@@ -355,10 +355,10 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
             -- distant even when a good site sits nearby -- scan local
             -- founding value before giving up or committing to a long march.
             local fallback,fallbackVal=nil,nil
-            for dx=-8,8 do
-                for dy=-8,8 do
+            for dx=-30,30 do
+                for dy=-30,30 do
                     local p=Map.GetPlot(x+dx,y+dy)
-                    if p and Map.PlotDistance(x,y,p:GetX(),p:GetY())<=8 and owner and owner:CanFound(p:GetX(),p:GetY()) then
+                    if p and Map.PlotDistance(x,y,p:GetX(),p:GetY())<=30 and owner and owner:CanFound(p:GetX(),p:GetY()) then
                         local val=p:GetFoundValue(owner:GetID())
                         if not fallback or val>fallbackVal then fallback,fallbackVal=p,val end
                     end
@@ -371,7 +371,8 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
         end
         if not best then
             LEKAutopilotLog("U_LastResult","SETTLE_NO_RECOMMENDATION_YET")
-            return false
+            Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_SKIP, 0, 0, 0, false)
+            return true
         end
         if best.x == x and best.y == y then
             if unit:MovesLeft() > 0 then

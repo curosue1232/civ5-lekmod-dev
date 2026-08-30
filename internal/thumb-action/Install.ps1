@@ -65,6 +65,15 @@ local LEKSpaceEscorts = {}
 local LEKSpaceEscortTargets = {}
 local LEKSpaceEscortDestinations = {}
 
+local LEKSpaceMissionSkipID = nil
+for i=0,#GameInfoActions do
+    local a = GameInfoActions[i]
+    if a and a.Type == "MISSION_SKIP" then
+        LEKSpaceMissionSkipID = a.ID
+        break
+    end
+end
+
 local function LEKSpaceOnWorldAnchor(atype, bShow, x, y, data1)
     if atype == GenericWorldAnchorTypes.WORLD_ANCHOR_SETTLER then
         local key = x..":"..y
@@ -381,7 +390,7 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
             else
                 LEKAutopilotLog("U_LastResult","SETTLE_WAIT_NO_MOVES")
             end
-            Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_SKIP, 0, 0, 0, false)
+            Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, (LEKSpaceMissionSkipID or 11), 0, 0, 0, false)
             return true
         end
         local settlerID = unit:GetID()
@@ -424,12 +433,12 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
                     UI.SelectUnit(unit)
                 end
                 LEKAutopilotLog("U_LastResult","SETTLE_WAIT_FOR_ESCORT")
-                Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_SKIP, 0, 0, 0, false)
+                Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, (LEKSpaceMissionSkipID or 11), 0, 0, 0, false)
                 return true
             end
             if unit:MovesLeft() <= 0 or guard:MovesLeft() <= 0 then
                 LEKAutopilotLog("U_LastResult","SETTLE_WAIT_FOR_ESCORT_MOVES")
-                Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_SKIP, 0, 0, 0, false)
+                Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, (LEKSpaceMissionSkipID or 11), 0, 0, 0, false)
                 return true
             end
             local nextPlot = LEKSpaceGreedyStepToward(x,y,destPlot)
@@ -713,10 +722,10 @@ local function LEKSpaceActivateOrSkip()
                 Game.HandleAction(deleteAction)
             else
                 LEKAutopilotLog("U_LastResult","DELETE_UNAVAILABLE_SKIPPING")
-                Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_SKIP, unit:GetID(), 0, 0, false)
+                Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, (LEKSpaceMissionSkipID or 11), unit:GetID(), 0, 0, false)
             end
         else
-            Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_SKIP, unit:GetID(), 0, 0, false)
+            Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, (LEKSpaceMissionSkipID or 11), unit:GetID(), 0, 0, false)
         end
         return
     end

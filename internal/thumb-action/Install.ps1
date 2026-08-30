@@ -175,12 +175,13 @@ end
 -- Breadth-first search through the unit owner's traversable territory. This
 -- avoids logging a geometric border target that the selected unit can never
 -- actually reach (water, mountain, wrong landmass, or a disconnected pocket).
-local function LEKSpaceNearestReachableFrontier(unit,radius)
+local function LEKSpaceFurthestReachableFrontier(unit,radius)
     local start=unit:GetPlot()
     if not start then return nil end
     local queue={{plot=start,dist=0}}
     local seen={[start:GetPlotIndex()]=true}
     local head=1
+    local bestPlot=nil
     while head<=#queue do
         local node=queue[head]
         head=head+1
@@ -190,13 +191,13 @@ local function LEKSpaceNearestReachableFrontier(unit,radius)
                 if p and not seen[p:GetPlotIndex()] and LEKSpaceIsGuardTraversable(p,unit) then
                     seen[p:GetPlotIndex()]=true
                     local dist=node.dist+1
-                    if LEKSpaceIsFrontierPlot(p,unit) and not LEKSpacePlotHasOtherCombatUnit(p,unit) then return p end
+                    if LEKSpaceIsFrontierPlot(p,unit) and not LEKSpacePlotHasOtherCombatUnit(p,unit) then bestPlot=p end
                     queue[#queue+1]={plot=p,dist=dist}
                 end
             end
         end
     end
-    return nil
+    return bestPlot
 end
 
 -- Same generic action-execution mechanism used for unit promotion: scan the
@@ -241,6 +242,29 @@ local function LEKSpaceGreedyStepToward(x,y,destPlot)
         end
     end
     return nextPlot
+end
+
+local function LEKSpaceNearestEmptyTile(unit, maxRadius)
+    local start=unit:GetPlot()
+    if not start then return nil end
+    local queue={{plot=start,dist=0}}
+    local seen={[start:GetPlotIndex()]=true}
+    local head=1
+    while head<=#queue do
+        local node=queue[head]
+        head=head+1
+        if node.dist<maxRadius then
+            for direction=0,5 do
+                local p=Map.PlotDirection(node.plot:GetX(),node.plot:GetY(),direction)
+                if p and not seen[p:GetPlotIndex()] and not p:IsWater() and LEKSpaceIsGuardTraversable(p,unit) then
+                    seen[p:GetPlotIndex()]=true
+                    if p:GetNumUnits() == 0 then return p end
+                    queue[#queue+1]={plot=p,dist=node.dist+1}
+                end
+            end
+        end
+    end
+    return nil
 end
 
 -- Best-effort per-unit-type default action for a unit Space has just
@@ -501,12 +525,9 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
     end
     if unit:GetBaseCombatStrength() > 0 or unit:GetBaseRangedCombatStrength() > 0 then
         if isStackedBlocker then
-            local x,y = unit:GetX(), unit:GetY()
-            for direction=0,5 do
-                local p = Map.PlotDirection(x,y,direction)
-                if p and not p:IsWater() and p:GetNumUnits() == 0 then
-                    return LEKSpaceMoveSelectedUnit(p,"UNSTACK_MOVE")
-                end
+            local p = LEKSpaceNearestEmptyTile(unit, 10)
+            if p then
+                return LEKSpaceMoveSelectedUnit(p,"UNSTACK_MOVE")
             end
             return false
         end
@@ -575,7 +596,7 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
             Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_ALERT, 0, 0, 0, false)
             return true
         end
-        local borderPlot = LEKSpaceNearestReachableFrontier(unit,30)
+        local borderPlot = LEKSpaceFurthestReachableFrontier(unit,30)
         if borderPlot then
             return LEKSpaceMoveSelectedUnit(borderPlot,"MOVE_TO_BORDER_GUARD")
         end

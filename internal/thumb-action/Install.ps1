@@ -437,12 +437,16 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
                 Game.HandleAction(spreadAction)
                 return true
             end
-            local owner = Players[unit:GetOwner()]
             local target,targetDist = nil,nil
-            for city in owner:Cities() do
-                if city:GetReligiousMajority() ~= religionID then
-                    local d = Map.PlotDistance(unit:GetX(),unit:GetY(),city:GetX(),city:GetY())
-                    if not target or d<targetDist then target,targetDist=city,d end
+            for i = 0, GameDefines.MAX_CIV_PLAYERS - 1 do
+                local p = Players[i]
+                if p and p:IsAlive() then
+                    for city in p:Cities() do
+                        if city:GetReligiousMajority() ~= religionID then
+                            local d = Map.PlotDistance(unit:GetX(),unit:GetY(),city:GetX(),city:GetY())
+                            if not target or d<targetDist then target,targetDist=city,d end
+                        end
+                    end
                 end
             end
             if target then
@@ -450,7 +454,8 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
             end
         end
         LEKAutopilotLog("U_LastResult","PROPHET_NO_RELIGIOUS_WORK_LEFT")
-        return false
+        Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_DO_COMMAND, CommandTypes.COMMAND_SLEEP, 0, 0, 0, false)
+        return true
     end
     if unitClass == "UNITCLASS_CARAVAN" or unitClass == "UNITCLASS_CARGO_SHIP" or (info and info.DefaultUnitAI == "UNITAI_TRADE_UNIT") then
         -- Bypasses ChooseInternationalTradeRoutePopup entirely and calls the

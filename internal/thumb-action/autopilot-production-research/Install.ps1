@@ -78,13 +78,20 @@ local function LEKSpaceChooseProduction()
   ExitCityScreen(); return true
  end
  Game.SetAdvisorRecommenderCity(city);local flavors,best=LEKSpaceLeaderFlavors()
- local function scan(rows,order,canDo,flavorTable,column,recommender)
-  for item in rows() do if canDo(city,item.ID) then
-   local rec=0;if recommender then for a=0,AdvisorTypes.NUM_ADVISOR_TYPES-1 do if recommender(item.ID,a) then rec=rec+1 end end end
-   local c={id=item.ID,order=order,rec=rec,score=LEKSpaceFlavorScore(flavorTable,column,item.Type,flavors)}
-   if LEKSpaceBetter(c,best) then best=c end
-  end end
- end
+  local function scan(rows,order,canDo,flavorTable,column,recommender)
+   for item in rows() do if canDo(city,item.ID) then
+    local rec=0;if recommender then for a=0,AdvisorTypes.NUM_ADVISOR_TYPES-1 do if recommender(item.ID,a) then rec=rec+1 end end end
+    local score=LEKSpaceFlavorScore(flavorTable,column,item.Type,flavors)
+    if item.Type == "UNIT_SETTLER" and city:GetOwner() then
+        local numCities = Players[city:GetOwner()]:GetNumCities()
+        if numCities < 4 then
+            score = score + ((4 - numCities) * 500)
+        end
+    end
+    local c={id=item.ID,order=order,rec=rec,score=score}
+    if LEKSpaceBetter(c,best) then best=c end
+   end end
+  end
  scan(GameInfo.Buildings,OrderTypes.ORDER_CONSTRUCT,city.CanConstruct,'Building_Flavors','BuildingType',Game.IsBuildingRecommended)
  scan(GameInfo.Units,OrderTypes.ORDER_TRAIN,LEKSpaceCanTrainUnit,'Unit_Flavors','UnitType',Game.IsUnitRecommended)
  scan(GameInfo.Projects,OrderTypes.ORDER_CREATE,city.CanCreate,'Project_Flavors','ProjectType',Game.IsProjectRecommended)

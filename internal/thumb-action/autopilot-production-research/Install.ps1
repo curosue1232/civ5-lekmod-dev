@@ -50,6 +50,15 @@ local function LEKSpaceHasSeaWorkTarget(city)
  end end
  return false
 end
+local function LEKSpaceHasSettleSpot(owner)
+    for i=0, Map.GetNumPlots()-1 do
+        local p = Map.GetPlotByIndex(i)
+        if p and p:IsRevealed(owner:GetTeam(), false) and owner:CanFound(p:GetX(), p:GetY()) then
+            return true
+        end
+    end
+    return false
+end
 local function LEKSpaceCanTrainUnit(city,id)
  if not city:CanTrain(id) then return false end
  -- A Work Boat with no sea resource anywhere nearby to improve is wasted
@@ -57,6 +66,7 @@ local function LEKSpaceCanTrainUnit(city,id)
  -- never build it in the first place.
  local info=GameInfo.Units[id]
  if info and info.DefaultUnitAI=="UNITAI_WORKER_SEA" and not LEKSpaceHasSeaWorkTarget(city) then return false end
+ if info and info.Type == "UNIT_SETTLER" and not LEKSpaceHasSettleSpot(Players[city:GetOwner()]) then return false end
  return true
 end
 local function LEKSpaceChooseProduction()

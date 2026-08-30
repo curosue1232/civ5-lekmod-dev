@@ -370,8 +370,8 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
             end
         end
         if not best then
-            LEKAutopilotLog("U_LastResult","SETTLE_NO_RECOMMENDATION_YET")
-            Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_SKIP, 0, 0, 0, false)
+            LEKAutopilotLog("U_LastResult","SETTLE_NO_RECOMMENDATION_DELETING")
+            Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_DO_COMMAND, CommandTypes.COMMAND_DELETE, 0, 0, 0, false)
             return true
         end
         if best.x == x and best.y == y then

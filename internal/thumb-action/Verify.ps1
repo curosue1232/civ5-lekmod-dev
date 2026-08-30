@@ -48,7 +48,7 @@ try {
         'workers automate build'= $t.Contains('GameInfoTypes.AUTOMATE_BUILD')
         'scouts, retained explorer upgrades, and unarmed ships automate explore'=($t.Contains('GameInfoTypes.AUTOMATE_EXPLORE') -and $t.Contains('DomainTypes.DOMAIN_SEA') -and $t.Contains('unit:GetUnitAIType()') -and $t.Contains('GameInfo.UnitAIInfos.UNITAI_EXPLORE') -and $t.Contains('AUTOMATE_EXPLORE_RETAINED_ROLE'))
         'settlers use the native settle-recommendation event'=($t.Contains('Events.GenericWorldAnchor.Add(LEKSpaceOnWorldAnchor)') -and $t.Contains('GenericWorldAnchorTypes.WORLD_ANCHOR_SETTLER'))
-        'settler settles immediately when legal, else moves to nearest recommendation'=($t.Contains('owner:CanFound(x,y)') -and $t.Contains('GameInfoTypes.MISSION_FOUND') -and $t.Contains('Map.PlotDistance(x,y,p.x,p.y)'))
+        'settler settles immediately when legal, else moves to nearest recommendation'=($t.Contains('owner:CanFound') -and $t.Contains('GameInfoTypes.MISSION_FOUND') -and $t.Contains('Map.PlotDistance(x,y,p:GetX(),p:GetY())'))
         'stacked-unit blocker moves off the stack instead of fortifying'=($t.Contains('isStackedBlocker') -and $t.Contains('Map.PlotDirection(x,y,direction)') -and $t.Contains('LEKSpaceMoveSelectedUnit(p,"UNSTACK_MOVE")'))
         'unit promotion uses the native generic action mechanism'=($t.Contains('unit:CanPromote()') -and $t.Contains('ActionSubTypes.ACTIONSUBTYPE_PROMOTION') -and $t.Contains('Game.CanHandleAction(actionID, plot, false)') -and $t.Contains('Game.HandleAction(actionID)'))
         'promotion-ready units are treated as a unit blocker'= $t.Contains('EndTurnBlockingTypes.ENDTURN_BLOCKING_UNIT_PROMOTION')

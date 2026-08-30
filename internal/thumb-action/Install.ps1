@@ -300,7 +300,14 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
     if unitClass == "UNITCLASS_SETTLER" then
         local x,y = unit:GetX(), unit:GetY()
         local owner = Players[unit:GetOwner()]
-        local foundAction = LEKSpaceFindMissionAction("MISSION_FOUND", unit:GetPlot())
+        local foundAction = nil
+        for i=0,#GameInfoActions do
+            local a = GameInfoActions[i]
+            if a and a.Type == "MISSION_FOUND" then
+                foundAction = a.ID
+                break
+            end
+        end
         if owner and owner:CanFound(x,y) and foundAction then
             LEKAutopilotLog("U_LastResult","SETTLE_HERE")
             Game.HandleAction(foundAction)

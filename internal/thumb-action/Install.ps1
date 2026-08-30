@@ -300,9 +300,10 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
     if unitClass == "UNITCLASS_SETTLER" then
         local x,y = unit:GetX(), unit:GetY()
         local owner = Players[unit:GetOwner()]
-        if owner and owner:CanFound(x,y) then
+        local foundAction = LEKSpaceFindMissionAction("MISSION_FOUND", unit:GetPlot())
+        if owner and owner:CanFound(x,y) and foundAction then
             LEKAutopilotLog("U_LastResult","SETTLE_HERE")
-            Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_FOUND, x, y, 0, false)
+            Game.HandleAction(foundAction)
             return true
         end
         local best,bestDist=nil,nil
@@ -334,12 +335,12 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
             return false
         end
         if best.x == x and best.y == y then
-            -- Standing on the recommended anchor but still can't found here
-            -- means the anchor went stale (e.g. a neighboring city's borders
-            -- expanded over it since it was recommended). Purge it so the
-            -- next tick picks a different anchor instead of looping forever.
-            LEKSpaceSettlerAnchors[x..":"..y] = nil
-            LEKAutopilotLog("U_LastResult","SETTLE_ANCHOR_INVALID")
+            if unit:MovesLeft() > 0 then
+                LEKSpaceSettlerAnchors[x..":"..y] = nil
+                LEKAutopilotLog("U_LastResult","SETTLE_ANCHOR_INVALID")
+            else
+                LEKAutopilotLog("U_LastResult","SETTLE_WAIT_NO_MOVES")
+            end
             Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_SKIP, 0, 0, 0, false)
             return true
         end
@@ -383,6 +384,11 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
                     UI.SelectUnit(unit)
                 end
                 LEKAutopilotLog("U_LastResult","SETTLE_WAIT_FOR_ESCORT")
+                Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_SKIP, 0, 0, 0, false)
+                return true
+            end
+            if unit:MovesLeft() <= 0 or guard:MovesLeft() <= 0 then
+                LEKAutopilotLog("U_LastResult","SETTLE_WAIT_FOR_ESCORT_MOVES")
                 Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, GameInfoTypes.MISSION_SKIP, 0, 0, 0, false)
                 return true
             end

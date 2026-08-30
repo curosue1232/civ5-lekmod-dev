@@ -256,7 +256,7 @@ local function LEKSpaceNearestEmptyTile(unit, maxRadius)
         if node.dist<maxRadius then
             for direction=0,5 do
                 local p=Map.PlotDirection(node.plot:GetX(),node.plot:GetY(),direction)
-                if p and not seen[p:GetPlotIndex()] and not p:IsWater() and LEKSpaceIsGuardTraversable(p,unit) then
+                if p and not seen[p:GetPlotIndex()] and p:IsValidDomainForLocation(unit) and not p:IsMountain() and not p:IsImpassable() then
                     seen[p:GetPlotIndex()]=true
                     if p:GetNumUnits() == 0 then return p end
                     queue[#queue+1]={plot=p,dist=node.dist+1}
@@ -279,6 +279,14 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
     local unitAIType = unit:GetUnitAIType()
     LEKAutopilotLog("U_LastUnitClass",unitClass or "")
     LEKAutopilotLog("U_LastUnitAIType",unitAIType or -1)
+
+    if isStackedBlocker then
+        local p = LEKSpaceNearestEmptyTile(unit, 10)
+        if p then
+            return LEKSpaceMoveSelectedUnit(p,"UNSTACK_MOVE")
+        end
+        return false
+    end
 
     if unit.CanPromote and unit:CanPromote() then
         -- GameInfoActions is the same unified action table (commands, builds,
@@ -524,13 +532,6 @@ local function LEKSpaceAutoActUnitInner(unit, isStackedBlocker)
         return true
     end
     if unit:GetBaseCombatStrength() > 0 or unit:GetBaseRangedCombatStrength() > 0 then
-        if isStackedBlocker then
-            local p = LEKSpaceNearestEmptyTile(unit, 10)
-            if p then
-                return LEKSpaceMoveSelectedUnit(p,"UNSTACK_MOVE")
-            end
-            return false
-        end
         local guardID = unit:GetID()
         local escortSettlerID = LEKSpaceEscortTargets[guardID]
         if escortSettlerID then

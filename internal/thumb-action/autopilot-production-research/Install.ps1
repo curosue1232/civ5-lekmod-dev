@@ -88,6 +88,24 @@ local function LEKSpaceChooseProduction()
             score = score + ((4 - numCities) * 500)
         end
     end
+    if item.Type == "BUILDING_SHRINE" and city:GetOwner() then
+        local pOwner = Players[city:GetOwner()]
+        if not pOwner:HasCreatedReligion() and not pOwner:HasCreatedPantheon() then
+            score = score + 1000
+        end
+    end
+    if item.Type == "BUILDING_MONUMENT" then
+        score = score + 500
+    end
+    if item.BuildingClass then
+        local bClass = GameInfo.BuildingClasses[item.BuildingClass]
+        if bClass and bClass.MaxGlobalInstances == 1 then
+            local numCities = Players[city:GetOwner()]:GetNumCities()
+            if numCities < 4 then
+                score = score - 1500
+            end
+        end
+    end
     local c={id=item.ID,order=order,rec=rec,score=score}
     if LEKSpaceBetter(c,best) then best=c end
    end end

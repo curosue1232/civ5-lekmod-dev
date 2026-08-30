@@ -53,11 +53,27 @@ try {
     }
 
     $thumbPanel=Join-LEKPath $civ 'Assets\DLC\Expansion2\UI\InGame\WorldView\ActionInfoPanel.lua'
-    if((Test-LEKPath $thumbPanel) -and (Test-LEKContains $thumbPanel 'LEK_EXT_SPACE_NEXT_ACTION_V03_BEGIN')){
-        Invoke-Verify 'Space Next Action v0.3' (Join-Path $Root 'thumb-action\Verify.ps1') $civ
+    if((Test-LEKPath $thumbPanel) -and (Test-LEKContains $thumbPanel 'LEK_EXT_SPACE_NEXT_ACTION_V07_BEGIN')){
+        Invoke-Verify 'Space Next Action v0.7' (Join-Path $Root 'thumb-action\Verify.ps1') $civ
     } else {
         W ''
         W 'Space Next Action marker not detected; skipping its verification automatically.' Yellow
+    }
+
+    $cityView=Join-LEKPath $civ 'Assets\DLC\UI_bc1\CityView\CityView.lua'
+    if((Test-LEKPath $cityView) -and (Test-LEKContains $cityView 'LEK_EXT_SPACE_AUTOPILOT_PR_V01_BEGIN')){
+        Invoke-Verify 'Space Autopilot Production/Research v0.1' (Join-Path $Root 'thumb-action\autopilot-production-research\Verify.ps1') $civ
+    } else {
+        W ''
+        W 'Space Autopilot Production/Research marker not detected; skipping its verification automatically.' Yellow
+    }
+
+    $socialPolicy=Join-LEKPath $civ 'Assets\DLC\UI_bc1\Improvements\SocialPolicyPopup.lua'
+    if((Test-LEKPath $socialPolicy) -and (Test-LEKContains $socialPolicy 'LEK_EXT_SPACE_AUTOPILOT_POLICY_V04_BEGIN')){
+        Invoke-Verify 'Space Autopilot Policy/Congress v0.8' (Join-Path $Root 'thumb-action\autopilot-policy-congress\Verify.ps1') $civ
+    } else {
+        W ''
+        W 'Space Autopilot Policy/Congress marker not detected; skipping its verification automatically.' Yellow
     }
 
     W ''
